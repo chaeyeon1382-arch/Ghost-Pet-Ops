@@ -108,15 +108,14 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
   - If `tsc --noEmit` rejects the file, fix it inside `vite.config.ts` with a small local type. Do not add a dependency.
   - Requirements 9.5, 10.1–10.5. Design 11.
 
-- [ ] 15. Verify the dev tooling stays out of production
-  - **Status: partly done, blocked on a decision.** Done in the sandbox: `grep -rn "DEV_" src/` finds nothing (one sample name in `config.test.ts` was renamed so that it stays true). Not possible in the sandbox: it cannot install packages, so `vite build` and the dev server cannot run, and the three builds, the `dist/` greps and the `curl` check have **not** been run. The existing CI job runs only the default build. A CI step for the `dist/` greps is proposed in the stage 4 report. The workflow is not changed until that is approved.
-  - Run the four checks in design 11.1:
+- [x] 15. Verify the dev tooling stays out of production
+  - The sandbox cannot run `vite build` or the dev server, so the check runs in CI. The workflow change was approved by the owner: one new step after `Build` in the existing `test-and-build` job. The job name, `permissions: contents: read` and everything else in the workflow are unchanged, and no secrets are used.
+  - The step does the checks from design 11.1:
     - `grep -rn "DEV_" src/` finds nothing,
-    - build three times: no variables, `VITE_DATA_SOURCE=api`, and `DEV_FAKE_STATUS=healthy`,
-    - `grep -rE "DEV_FAKE_STATUS|DEV_API_TARGET|fake-status" dist/` finds nothing after each build,
-    - `grep -rE "execute-api|amazonaws|localhost" dist/` finds nothing.
-  - If the dev server can start in the sandbox, start it in the background with `DEV_FAKE_STATUS=healthy`, request `/status` with `curl` and check the JSON, and check that `DEV_API_TARGET` plus `DEV_FAKE_STATUS` together fails. Stop the server afterwards. If it cannot, say so.
-  - Record the commands and results for the PR description.
+    - four builds: `NONE=1` (default), `VITE_DATA_SOURCE=api`, `DEV_FAKE_STATUS=healthy` and `DEV_API_TARGET=http://dev-proxy-target.invalid:9`,
+    - after each build, `dist/` must not contain `DEV_FAKE_STATUS`, `DEV_API_TARGET`, `fake-status`, `dev-proxy-target`, `execute-api` or `amazonaws`.
+  - Result (commit `873e68f`): passed, with no string flagged. The default, `DEV_FAKE_STATUS` and `DEV_API_TARGET` builds give a byte-identical bundle (`index-D2jCJqZ8.js`). Only the `api` build differs (`index-CeToKSqv.js`), as expected.
+  - **Still not checked:** the dev server, the fake `/status`, the proxy and the Codespaces host setting, which CI never starts. They are covered by the manual checklist.
   - Requirements 10.1, 10.5. Design 11.1.
 
 - [x] 16. README
@@ -131,7 +130,7 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
 ## F. Review
 
 - [x] 18. Final checks and pull request
-  - **Status:** done except for task 15. The pull request stays a draft by request. The diff audit (protected paths, secrets, `DEV_` in `src/`, `innerHTML`, dependencies) is clean. The real test, typecheck and build run only in CI.
+  - **Status:** done. The pull request stays a draft by request. The diff audit (protected paths, secrets, `DEV_` in `src/`, `innerHTML`, dependencies) is clean. The real test, typecheck and build run only in CI.
   - Run `npm test`, `npm run typecheck` and `npm run build` if possible. Check, with `git diff main --stat`, that `backend/`, `.github/`, `src/domain/petState.ts`, `src/domain/types.ts`, `src/api/mockStatus.ts` and its tests are untouched, and that the only `vite.config.ts` changes are the include pattern and the dev tooling. Check that no secrets or `.env` files are committed and that `package.json` and the lock file have no new dependencies.
   - Re-read `requirements.md` and tick each acceptance criterion against the result. List any criterion that could not be verified.
   - Commit on `feature/frontend-status-api`, push, and open a PR into `main` with `gh api`. The PR description lists: what changed, the commands and results from task 15, which checks ran in the sandbox and which did not (no claim of passing tests that did not run), the visible change in `mock` mode (event service labels), the `unknown` waiting-pet behavior until the checker exists, and the known gaps from design 14.

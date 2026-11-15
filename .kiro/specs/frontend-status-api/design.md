@@ -335,12 +335,12 @@ Setting both is an error at config load, so a developer is never unsure which on
 - **No `src/` code reads `DEV_*` variables.** Browser code reads only `import.meta.env.VITE_DATA_SOURCE` and `import.meta.env.VITE_POLL_INTERVAL_MS`, through `readConfig`. Vite exposes only variables with the `VITE_` prefix to `import.meta.env`, so a `DEV_*` variable could not reach the browser even by mistake.
 - The mock builder (`buildMockResponse`) is in the production bundle by design, because `mock` is the default source. So the check below looks for strings that exist only in the dev tooling, not for `buildMockResponse`.
 
-**How we verify it** (a task, run manually, because the CI workflow must not change):
+**How we verify it** (a step in the existing `test-and-build` CI job, added with the owner's approval; the job name and permissions are unchanged):
 1. `grep -rn "DEV_" src/` finds nothing.
 2. `npm run build` with no variables, then again with `VITE_DATA_SOURCE=api`, and once with `DEV_FAKE_STATUS=healthy npm run build`. The last case proves that a stray dev variable does nothing to a production build.
 3. In each case, `grep -rE "DEV_FAKE_STATUS|DEV_API_TARGET|fake-status" dist/` finds nothing. The plugin's name and its log/error strings contain `fake-status`, so the search has something to find if the code leaked.
 4. `grep -rE "execute-api|amazonaws|localhost" dist/` finds nothing, which shows that no API host or dev address is baked into the bundle. The relative `/status` path may appear, which is expected.
-The PR description states that these checks were run, with the commands. CI still runs the normal `npm test` and `npm run build`, which only proves that the default build works.
+The step uses four builds: no variable, `VITE_DATA_SOURCE=api`, `DEV_FAKE_STATUS=healthy` and `DEV_API_TARGET=http://dev-proxy-target.invalid:9`, and fails if `dist/` contains any dev-only marker or an API host. It uses `if grep`, because `! grep` does not fail a step under `bash -e`. It checks the production bundle only. It does not start a dev server, so the fake `/status`, the proxy and the Codespaces host setting are still checked by hand.
 
 ```
 # fake data, no backend
@@ -394,7 +394,7 @@ Server rendering cannot run effects, so React behavior is checked through the co
 - **No real-API test.** Nothing is deployed in this spec, so the real endpoint is never called. The validator is built from `api-format.md` and the backend's own tests, not from live responses.
 - **CORS and CloudFront.** The relative path assumes the frontend and `/status` share an origin (design 6.3, option B). Hosting is a later spec.
 - **Vite config-loader warning.** `vite.config.ts` imports `src/api/mockStatus` so that the dev-only fake can reuse the mock builder. Vite 8 then prints a warning on every `npm test`, `npm run dev` and `npm run build`: the config uses imports without a file extension, which the `configLoader: 'native'` mode that is planned to become the default in a future Vite major cannot resolve. It is a warning, not an error, and it changes nothing today. Fixing it needs file extensions in `mockStatus.ts` (which must not change here) or loading the module through `server.ssrLoadModule` (also planned for deprecation, and untested here). When Vite makes `native` the default, this import has to be revisited. Setting `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` would hide the message, but it needs a package.json script or a CI change, which this spec does not make.
-- **The dev tooling is not exercised by CI.** Vitest loads `vite.config.ts` on every run, so the file must parse and import correctly, and `tsc --noEmit` in the build checks its types. The middleware, the proxy and the Codespaces host setting only run in a dev server, which CI never starts. They are checked by hand (README, and the manual checklist in the stage 4 report).
+- **The dev tooling is not exercised by CI.** Vitest loads `vite.config.ts` on every run, so the file must parse and import correctly, and `tsc --noEmit` in the build checks its types. The middleware, the proxy and the Codespaces host setting only run in a dev server, which CI never starts. They are checked by hand (README, and the manual checklist in the stage 4 report). CI does check, in four builds, that none of this tooling reaches the production bundle.
 - **Slight change to `mock` mode.** Event rows gain a service label (section 10).
 
 ## 15. Requirement coverage
