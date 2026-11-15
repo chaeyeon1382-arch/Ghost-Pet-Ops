@@ -20,10 +20,24 @@ TypeScript source of truth: `src/api/types.ts`.
 ```
 
 ## Field rules
-- `status`, `from`, `to`: one of `healthy`, `slow`, `down`, `recovering`.
-- `responseMs`: integer milliseconds of the most recent check. On timeout, the timeout value (5000).
-- `lastChecked`, `at`: ISO 8601 in UTC with a `Z` suffix.
-- `events`: newest first. Only real state changes, never one entry per check.
+- `status`, `from`, `to`: lowercase, one of `unknown`, `healthy`, `slow`, `down`, `recovering`. `unknown` means no status has been decided yet.
+- `responseMs`: integer milliseconds of the most recent check, or `null` if no check has run. On timeout, the timeout value (5000).
+- `lastChecked`: ISO 8601 in UTC with a `Z` suffix, or `null` if no check has run.
+- `at`: ISO 8601 in UTC with a `Z` suffix.
+- `events`: the 20 most recent, newest first. Only real status transitions (including `unknown` -> first status), never one entry per check.
+- The checker's counters (`consecutiveFailures`, `consecutiveSlow`, `consecutiveFast`) are stored in DynamoDB and never appear in this response.
+
+Example before the first check:
+
+```json
+{
+  "services": [
+    { "id": "site-1", "name": "Example", "status": "unknown",
+      "responseMs": null, "lastChecked": null }
+  ],
+  "events": []
+}
+```
 - `note`: short human-readable reason. It must not contain URLs with credentials, tokens, or response bodies.
 - Adding fields is allowed. Renaming or removing fields requires updating `src/api/types.ts`, this file, and the Lambda together.
 

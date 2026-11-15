@@ -6,12 +6,13 @@ inclusion: always
 ```
 src/
   domain/      Pure TypeScript. State decision logic and types. No React, no I/O, no clock.
-    types.ts       PetState, CheckResult, Tracker, Transition
-    petState.ts    decide(), runChecks(), isFailure(), thresholds
+    types.ts       Status, CheckResult, Tracker (status + counters), Transition
+    petState.ts    decide(), runChecks(), classify(), isFailure(), thresholds
     petState.test.ts
   api/         Data access. Today: mock data. Later: fetch to API Gateway.
     types.ts       StatusResponse (the API contract, see api-format.md)
     mockStatus.ts  Demo scenarios built by running the real domain logic
+    mockStatus.test.ts
   components/  Presentational React components. Render props only, no data fetching.
   App.tsx      Wires the data source to components.
   main.tsx     Entry point.

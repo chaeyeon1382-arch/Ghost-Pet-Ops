@@ -1,6 +1,13 @@
-import type { PetState } from "../domain/types";
+import type { Status } from "../domain/types";
 
-const ART: Record<PetState, string> = {
+const ART: Record<Status, string> = {
+  unknown: String.raw`
+   .-----.
+  /  . .  \
+ |         |  ?
+ |   ...   |
+ |         |
+ '~^~^~^~^~'`,
   healthy: String.raw`
    .-----.
   /  ^ ^  \
@@ -19,7 +26,7 @@ const ART: Record<PetState, string> = {
    .-----.
   /  x x  \
  |    o    |
- |   /‾\   |
+ |   /^\   |
  |         |
  '~ ~ ~ ~ ~'`,
   recovering: String.raw`
@@ -31,18 +38,19 @@ const ART: Record<PetState, string> = {
  '~^~ ~^~ ~'`,
 };
 
-const CAPTION: Record<PetState, string> = {
+const CAPTION: Record<Status, string> = {
+  unknown: "Waiting for the first health check...",
   healthy: "Boo is happy and floating.",
   slow: "Boo is sluggish. Responses are slow.",
   down: "Boo has faded away. The service is down.",
   recovering: "Boo is coming back...",
 };
 
-export function Pet({ state }: { state: PetState }) {
+export function Pet({ status }: { status: Status }) {
   return (
-    <figure className={`pet pet--${state}`}>
-      <pre aria-hidden="true">{ART[state]}</pre>
-      <figcaption>{CAPTION[state]}</figcaption>
+    <figure className={`pet pet--${status}`}>
+      <pre aria-hidden="true">{ART[status]}</pre>
+      <figcaption>{CAPTION[status]}</figcaption>
     </figure>
   );
 }

@@ -5,6 +5,7 @@
   --slow: #ffd166;
   --down: #ff5c5c;
   --recovering: #7cc7ff;
+  --unknown: #a0a0a0;
   font-family: ui-monospace, "Courier New", monospace;
   background: var(--bg);
   color: var(--fg);
@@ -19,6 +20,7 @@ h2 { font-size: 0.9rem; border-bottom: 1px dashed var(--muted); }
 .pet--slow pre { color: var(--slow); animation: float 5s ease-in-out infinite; }
 .pet--down pre { color: var(--down); opacity: 0.45; }
 .pet--recovering pre { color: var(--recovering); animation: blink 1s steps(2) infinite; }
+.pet--unknown pre { color: var(--unknown); }
 @keyframes float { 50% { transform: translateY(-6px); } }
 @keyframes blink { 50% { opacity: 0.5; } }
 @media (prefers-reduced-motion: reduce) { .pet pre { animation: none !important; } }
@@ -28,6 +30,7 @@ h2 { font-size: 0.9rem; border-bottom: 1px dashed var(--muted); }
 .status--slow { color: var(--slow); }
 .status--down { color: var(--down); }
 .status--recovering { color: var(--recovering); }
+.status--unknown { color: var(--unknown); }
 .events { padding-left: 1.25rem; font-size: 0.85rem; }
 .muted { color: var(--muted); }
 .demo button {
