@@ -6,3 +6,5 @@ dist
 .aws-sam
 samconfig.toml
 coverage
+__pycache__/
+.pytest_cache/

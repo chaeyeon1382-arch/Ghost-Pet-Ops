@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 
 import status_app
-from ghostpet.config import Service
+from ghostpet.config import Service, load_services
 
 NOW = datetime(2026, 11, 15, 2, 0, 0, tzinfo=UTC)
 SERVICES = [Service("site-1", "Example", "https://example.com/"), Service("site-2", "Example Two", "https://example.com/docs")]
@@ -215,7 +215,7 @@ def test_unexpected_shaping_error_returns_500(caplog, monkeypatch):
 
 def test_bundled_config_loads_at_import():
     assert status_app._CONFIG_ERROR is None
-    assert [s.id for s in status_app._SERVICES] == ["site-1", "site-2", "site-3", "site-4"]
+    assert status_app._SERVICES == load_services()
 
 
 def test_lambda_entry_point_uses_module_config_and_table(monkeypatch):
@@ -223,7 +223,8 @@ def test_lambda_entry_point_uses_module_config_and_table(monkeypatch):
     monkeypatch.setattr(status_app, "_get_table", lambda: table)
     response = status_app.handler({"rawPath": "/status"}, None)
     assert response["statusCode"] == 200
-    assert len(json.loads(response["body"])["services"]) == 4
+    ids = [s["id"] for s in json.loads(response["body"])["services"]]
+    assert ids == [s.id for s in load_services()]
 
 
 def test_lambda_entry_point_with_config_error(monkeypatch):

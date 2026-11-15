@@ -6,6 +6,7 @@ source of URLs the checker may request (URL allowlist). It must not contain secr
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
@@ -18,6 +19,10 @@ MAX_SERVICES = 25
 MAX_NAME_LENGTH = 64
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 _ALLOWED_KEYS = frozenset({"id", "name", "url"})
+_LABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
+_NUMERIC_LABEL_RE = re.compile(r"^(0x[0-9a-f]*|[0-9]+)$")
+# Names that never point at a public site. "arpa" covers home.arpa and reverse-DNS names.
+_BLOCKED_SUFFIXES = frozenset({"localhost", "local", "internal", "localdomain", "arpa"})
 
 
 class ConfigError(ValueError):
@@ -89,3 +94,30 @@ def _check_url(url: Any, where: str) -> None:
         raise ConfigError(f"{where}: url must have a host")
     if parts.username is not None or parts.password is not None or "@" in parts.netloc:
         raise ConfigError(f"{where}: url must not contain user info")
+    _check_public_hostname(parts.hostname, where)
+
+
+def _check_public_hostname(hostname: str, where: str) -> None:
+    """Allow only public DNS names. Blocks IP literals, localhost and internal names (SSRF).
+
+    This is a static check of the configured text. A public name can still resolve to a
+    private address, so the checker must also verify the resolved IP at request time.
+    """
+    host = hostname.lower().rstrip(".")
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise ConfigError(f"{where}: url host must be a DNS name, not an IP address")
+
+    labels = host.split(".")
+    if labels[-1] in _BLOCKED_SUFFIXES or ".".join(labels[-2:]) in _BLOCKED_SUFFIXES:
+        raise ConfigError(f"{where}: url host must not be localhost or an internal name")
+    if len(labels) < 2:
+        raise ConfigError(f"{where}: url host must be a fully qualified public DNS name")
+    if not all(_LABEL_RE.match(label) for label in labels):
+        raise ConfigError(f"{where}: url host has invalid characters")
+    # Numeric or hex last labels (127.1, 0x7f.0.0.1) are IPv4 forms that resolvers accept. No real TLD looks like that.
+    if _NUMERIC_LABEL_RE.match(labels[-1]):
+        raise ConfigError(f"{where}: url host must be a DNS name, not an IP address")

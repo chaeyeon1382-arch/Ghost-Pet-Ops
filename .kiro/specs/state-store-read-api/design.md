@@ -136,6 +136,14 @@ Validation runs once per Lambda cold start (`ghostpet/config.py`). Every rule ap
 - `id` matches `^[a-z0-9][a-z0-9-]{0,62}$` and is unique. No `#`, so ids are safe inside keys.
 - `name` is 1 to 64 characters.
 - `url` is required, uses the `https` scheme, has a host, and has no user or password part. The reader ignores `url`. The checker uses it as its allowlist and must never take a URL from anywhere else.
+- The host must be a public DNS name. Rejected hosts:
+  - IP literals (IPv4 and IPv6, public or private),
+  - alternative IPv4 forms whose last label is numeric or hex (`127.1`, `0x7f.0.0.1`),
+  - `localhost` and `*.localhost`,
+  - single-label names,
+  - names ending in `.local`, `.internal`, `.localdomain` or `.arpa`,
+  - labels with characters outside `a-z`, `0-9` and `-`.
+- This is a static check of the text only. A public name can still resolve to a private address, so the checker must resolve the host at request time and refuse loopback, private, link-local and metadata addresses (design 4.1 step 1).
 - No secrets. URLs must not carry tokens in the query string.
 
 If validation fails, the reader returns `500` on every request and logs the reason (requirement 5.5).
@@ -147,7 +155,7 @@ the checker is built, only on the item shapes in section 2.
 
 ### 4.1 Per service, per invocation
 
-1. **Check.** Run the HTTPS GET for the configured `url` (5 s timeout, no redirects) and build `CheckResult`.
+1. **Check.** Run the HTTPS GET for the configured `url` (5 s timeout, no redirects) and build `CheckResult`. Before connecting, resolve the host and refuse loopback, private, link-local and metadata addresses (treat that as a failed check and log it).
    Set `checkedAt = now`, formatted as in 2.3.
 2. **Read.** `GetItem(pk="SERVICES", sk="SERVICE#<id>", ConsistentRead=True)`.
    - If there is no item, use `prev = {status: "unknown", counters: 0}` and `expectedVersion = None`.
@@ -341,9 +349,9 @@ The `AllowedOrigin` parameter stays in the template as a fallback. It is validat
 
 | Resource | Notes |
 |---|---|
-| Parameters | `ThrottleRateLimit` (20), `ThrottleBurstLimit` (50), `AllowedOrigin` ("", pattern `^$\|^https?://[^*\s]+$`), `EventRetentionDays` (7, range 1–365), `LogRetentionDays` (14) |
+| Parameters | `ThrottleRateLimit` (20), `ThrottleBurstLimit` (50), `AllowedOrigin` ("", pattern `^$\|^https?://[^*\s/]+$`), `EventRetentionDays` (7, range 1–365), `LogRetentionDays` (14) |
 | `StateTable` | `AWS::DynamoDB::Table`, `PAY_PER_REQUEST`, `pk`/`sk` strings, TTL on `expiresAt`, default encryption. Point-in-time recovery off, because the data is regenerable within minutes. |
-| `StatusApi` | `AWS::Serverless::HttpApi`, `DefaultRouteSettings` throttling from parameters, `CorsConfiguration` only if `AllowedOrigin` is set |
+| `StatusApi` | `AWS::Serverless::HttpApi`, `DefaultRouteSettings` throttling from parameters. `CorsConfiguration` is one `!If` around the whole block, so no `x-amazon-apigateway-cors` exists unless `AllowedOrigin` is set. A per-field `!If` must not be used: SAM then treats the `AllowOrigins` intrinsic as the entire CORS configuration and drops the other fields. Verified by rendering the SAM transform both ways. |
 | `StatusFunctionLogGroup` | `/aws/lambda/${AWS::StackName}-status`, retention from parameter |
 | `StatusFunctionRole` | Inline policy: `dynamodb:Query` on `StateTable.Arn`. `logs:CreateLogStream` and `logs:PutLogEvents` on its log group only. `GetItem` is allowed by the requirements but not granted, because the reader only queries. |
 | `StatusFunction` | `python3.12`, `arm64`, 128 MB, 5 s timeout, `CodeUri: src/`, `Handler: status_app.handler`, `Role: StatusFunctionRole`, env `TABLE_NAME`, event `GET /status` on `StatusApi` |
@@ -421,8 +429,7 @@ Run with `cd backend && python -m pytest`.
 
 ## 10. Known gaps
 
-- **The SAM template is not validated.** The sandbox has no SAM CLI, no cfn-lint and no network. Before the first deploy, run `sam validate --lint` (or `cfn-lint backend/template.yaml`) locally.
-- **pytest does not run in CI.** The CI workflow is unchanged in this session. Adding a Python job is a follow-up task.
+- **Template validation runs only in CI.** The development sandbox has no SAM CLI or cfn-lint. The CI `backend` job runs pytest on Python 3.12 and `sam validate --lint --region us-east-1`. The region is needed only for the SAM transform. No credentials or secrets are used. Validation does not prove the stack deploys. IAM, quotas and account settings are checked only at deploy time.
 - **Nothing is deployed.** The throttle defaults and cost figures are calculations, not load-test results.
 - **The checker is not implemented.** Section 4 is a contract only. Its Python port of the domain logic must reuse the TypeScript test scenarios.
 - **The CloudFront distribution** and the frontend `/status` client belong to later specs.

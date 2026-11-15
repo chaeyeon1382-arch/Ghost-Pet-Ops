@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  Ghost Pet Ops state store and read API (GET /status).
+  See .kiro/specs/state-store-read-api/design.md section 7.
+
+Parameters:
+  ThrottleRateLimit:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    MaxValue: 1000
+    Description: Steady requests per second for the API stage. 20 = 50 viewers polling every 5 s, times 2 (design 6.2).
+  ThrottleBurstLimit:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    MaxValue: 2000
+    Description: Token bucket size for the API stage. 50 = all viewers polling in the same second (design 6.2).
+  AllowedOrigin:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^https?://[^*\\s/]+$"
+    ConstraintDescription: Must be empty or a single origin such as https://d111111abcdef8.cloudfront.net, without wildcards or a path.
+    Description: Frontend origin allowed by CORS. Empty (default) means no CORS headers are sent (design 6.3).
+  EventRetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 365
+    Description: Days until an event expires through TTL. Passed to the checker later (design 2.2).
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365]
+    Description: CloudWatch Logs retention for the Lambda log groups.
+
+Conditions:
+  HasAllowedOrigin: !Not [!Equals [!Ref AllowedOrigin, ""]]
+
+Resources:
+  # One table for service records (pk=SERVICES) and events (pk=EVENTS). Design section 2.
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    # The data is regenerable within minutes (records) or short-lived (events), so the table is not retained.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  StatusApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      FailOnWarnings: true
+      DefaultRouteSettings:
+        ThrottlingRateLimit: !Ref ThrottleRateLimit
+        ThrottlingBurstLimit: !Ref ThrottleBurstLimit
+      # The whole block is conditional: SAM turns this into a conditional x-amazon-apigateway-cors.
+      # With AllowedOrigin empty (default) there is no CORS configuration at all.
+      # Do not put !If on individual fields: SAM then treats the AllowOrigins intrinsic as the
+      # entire CORS configuration and drops the other fields.
+      CorsConfiguration: !If
+        - HasAllowedOrigin
+        - AllowOrigins:
+            - !Ref AllowedOrigin
+          AllowMethods:
+            - GET
+          MaxAge: 600
+        - !Ref AWS::NoValue
+
+  StatusFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-status
+      RetentionInDays: !Ref LogRetentionDays
+
+  # Reader: Query on this table only, plus its own log group. Design 7, requirement 8.1.
+  StatusFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Ghost Pet Ops status Lambda. Read-only Query on the state table.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: query-state-table
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource: !GetAtt StateTable.Arn
+        - PolicyName: write-own-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt StatusFunctionLogGroup.Arn
+
+  StatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-status
+      Description: GET /status for Ghost Pet Ops
+      CodeUri: src/
+      Handler: status_app.handler
+      Runtime: python3.12
+      Architectures:
+        - arm64
+      MemorySize: 128
+      Timeout: 5
+      Role: !GetAtt StatusFunctionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref StatusFunctionLogGroup
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref StateTable
+      Events:
+        GetStatus:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref StatusApi
+            Path: /status
+            Method: GET
+
+  # Writer role for the teammate's checker Lambda (design 4.6). No function uses it yet.
+  CheckerFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-checker
+      RetentionInDays: !Ref LogRetentionDays
+
+  CheckerFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Ghost Pet Ops checker Lambda. GetItem, PutItem and UpdateItem on the state table only.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: write-state-table
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt StateTable.Arn
+        - PolicyName: write-own-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt CheckerFunctionLogGroup.Arn
+
+Outputs:
+  StatusUrl:
+    Description: Direct GET /status URL
+    Value: !Sub https://${StatusApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/status
+  ApiDomain:
+    Description: HTTP API domain, used as the CloudFront origin for /status (design 6.3)
+    Value: !Sub ${StatusApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+  StateTableName:
+    Description: State table name, passed to Lambdas as TABLE_NAME
+    Value: !Ref StateTable
+  CheckerFunctionRoleArn:
+    Description: Role for the future checker Lambda (Role property)
+    Value: !GetAtt CheckerFunctionRole.Arn
+  CheckerFunctionLogGroupName:
+    Description: Log group for the future checker Lambda (LoggingConfig.LogGroup)
+    Value: !Ref CheckerFunctionLogGroup
+  EventRetentionDays:
+    Description: Event TTL in days, for the checker's EVENT_RETENTION_DAYS setting
+    Value: !Ref EventRetentionDays

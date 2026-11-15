@@ -1,0 +1,2 @@
+# Runtime dependencies for every Lambda in this stack (CodeUri: src/).
+# Intentionally empty: the code uses only the standard library and boto3, which the Lambda runtime provides.

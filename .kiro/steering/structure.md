@@ -17,6 +17,7 @@ src/
   App.tsx      Wires the data source to components.
   main.tsx     Entry point.
 backend/       SAM template and Python 3.12 Lambdas
+  README.md              Tests, deploy order, placeholder URLs, checker author notes
   template.yaml          All AWS resources. Every function uses CodeUri: src/
   requirements-dev.txt   Local test dependencies (pytest). Not packaged.
   src/                   Lambda code root, packaged into every function

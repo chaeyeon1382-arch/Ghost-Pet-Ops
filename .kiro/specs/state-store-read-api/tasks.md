@@ -43,7 +43,7 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
     - logs containing the service id for invalid data.
   - Requirements 1.4, 6.1–6.12. Design 5.1, 5.2.
 
-- [ ] 5. SAM template
+- [x] 5. SAM template
   - Create `backend/template.yaml` per design 7:
     - Parameters (throttle rate 20 and burst 50, `AllowedOrigin` with a pattern that blocks `*`, `EventRetentionDays` 7, `LogRetentionDays` 14).
     - `StateTable` (on-demand, `pk`/`sk`, TTL on `expiresAt`).
@@ -52,18 +52,21 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
     - `CheckerFunctionRole` (`GetItem`, `PutItem`, `UpdateItem` on the table, logs on the future checker group).
     - Outputs.
   - Create the empty `backend/src/requirements.txt`.
-  - Verify in the sandbox, without committing a script:
+  - Add a `backend` job to `.github/workflows/ci.yml` (requested during review). It runs Python 3.12, pytest in `backend/`, and `sam validate --lint`, uses no credentials, and keeps permissions read-only. The Node job is unchanged.
+  - Verified on a GitHub runner from a temporary scratch branch, now deleted, with a one-off script that is not committed:
     - the YAML parses with CloudFormation tags,
-    - no `*` resource on any DynamoDB action,
-    - no VPC, NAT or EC2 resources,
-    - no account IDs or hard-coded ARNs,
-    - the role actions match design 4.6 and 7.
-  - Known gap: `sam validate --lint` cannot run here (design 10).
+    - the role actions match design 4.6 and 7,
+    - no `*`, account IDs or hard-coded ARNs,
+    - no VPC or NAT resources,
+    - throttling comes from parameters,
+    - the rendered SAM transform has no CORS block by default,
+    - `sam build` packages `ghostpet/`.
   - Requirements 1–2, 4.4–4.5, 7, 8, 9.
 
-- [ ] 6. Docs and housekeeping
+- [x] 6. Docs and housekeeping
   - Add `backend/README.md`. It covers how to run the tests, the deploy order from design 6.3, the AWS Budgets recommendation (design 6.2), the `sam validate --lint` step before the first deploy, and a pointer to design section 4 for the checker author.
   - Add `__pycache__/` and `.pytest_cache/` to `.gitignore`. Add a backend line to the root `README.md`.
+  - Update design 3, 4.1, 7 and 10 to match what was built: host rules, the SSRF check at request time, whole-block CORS `!If`, and validation in CI.
   - `structure.md` is already updated in the design step. Check that it still matches the files created.
 
 - [ ] 7. Review and pull request
@@ -74,5 +77,4 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
 - Frontend spec: requirement 11 (error state, stale marker, 429 backoff, unknown `serviceId`) and replacing the mock data with `/status`.
 - Checker spec (teammate): `ghostpet/decision.py`, `src/checker_app.py`, EventBridge Scheduler, and the write contract in design section 4.
 - Frontend hosting spec: S3 and CloudFront with the `/status` behavior from design 6.3.
-- CI: a Python job running pytest and `sam validate --lint`. Out of scope for this session.
 - Account setup: the AWS Budgets alert from design 6.2.
