@@ -130,7 +130,8 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
 
 ## F. Review
 
-- [ ] 18. Final checks and pull request
+- [x] 18. Final checks and pull request
+  - **Status:** done except for task 15. The pull request stays a draft by request. The diff audit (protected paths, secrets, `DEV_` in `src/`, `innerHTML`, dependencies) is clean. The real test, typecheck and build run only in CI.
   - Run `npm test`, `npm run typecheck` and `npm run build` if possible. Check, with `git diff main --stat`, that `backend/`, `.github/`, `src/domain/petState.ts`, `src/domain/types.ts`, `src/api/mockStatus.ts` and its tests are untouched, and that the only `vite.config.ts` changes are the include pattern and the dev tooling. Check that no secrets or `.env` files are committed and that `package.json` and the lock file have no new dependencies.
   - Re-read `requirements.md` and tick each acceptance criterion against the result. List any criterion that could not be verified.
   - Commit on `feature/frontend-status-api`, push, and open a PR into `main` with `gh api`. The PR description lists: what changed, the commands and results from task 15, which checks ran in the sandbox and which did not (no claim of passing tests that did not run), the visible change in `mock` mode (event service labels), the `unknown` waiting-pet behavior until the checker exists, and the known gaps from design 14.
