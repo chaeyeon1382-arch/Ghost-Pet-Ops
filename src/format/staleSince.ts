@@ -4,7 +4,14 @@
  * Without options it uses the viewer's own time zone and locale. Tests pass both explicitly.
  * Pure: the time is an argument and nothing reads the clock.
  */
-export function formatStaleSince(ms: number, opts: { timeZone?: string; locale?: string } = {}): string {
+export interface TimeOptions {
+  /** IANA zone name, for example "Asia/Seoul". Default: the viewer's zone. */
+  timeZone?: string;
+  /** BCP 47 locale, for example "en-US". Default: the viewer's locale. */
+  locale?: string;
+}
+
+export function formatStaleSince(ms: number, opts: TimeOptions = {}): string {
   const parts = new Intl.DateTimeFormat(opts.locale, {
     hour: "2-digit",
     minute: "2-digit",
