@@ -39,3 +39,16 @@ h2 { font-size: 0.9rem; border-bottom: 1px dashed var(--muted); }
 }
 .demo button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 .demo button:focus-visible { outline: 2px dashed var(--slow); outline-offset: 2px; }
+.services { list-style: none; margin: 0; padding: 0; }
+.services li + li { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed var(--muted); }
+.event-service { color: var(--muted); }
+.frame { position: relative; }
+.frame--empty { min-height: 14rem; }
+/* "No signal": the last good data stays in the page, dimmed. The overlay is not dimmed. Text, not color alone, carries the state. */
+.frame--stale > :not(.no-signal) { opacity: 0.35; filter: grayscale(1); }
+.no-signal {
+  position: absolute; inset: 0; display: grid; place-content: center; gap: 0.25rem; text-align: center;
+  background: rgba(11, 15, 11, 0.6); border: 2px dashed var(--down);
+}
+.no-signal p { margin: 0; }
+.no-signal__title { color: var(--down); letter-spacing: 0.3em; font-weight: bold; }

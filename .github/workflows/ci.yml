@@ -34,6 +34,30 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The dev-only helpers (DEV_FAKE_STATUS, DEV_API_TARGET) must never reach a production bundle.
+      # Each variant builds with a different setting, then dist/ is searched for the dev-only strings.
+      # No secrets are used. The markers are placeholders. `if grep` is used because `! grep` does not fail under `bash -e`.
+      - name: Production bundle contains no dev tooling
+        run: |
+          if grep -rn "DEV_" src/; then
+            echo "src/ must not mention DEV_ variables"
+            exit 1
+          fi
+          for variant in "NONE=1" "VITE_DATA_SOURCE=api" "DEV_FAKE_STATUS=healthy" "DEV_API_TARGET=http://dev-proxy-target.invalid:9"; do
+            echo "::group::build with $variant"
+            rm -rf dist
+            env "$variant" npm run build
+            echo "::endgroup::"
+            if grep -rEn "DEV_FAKE_STATUS|DEV_API_TARGET|fake-status|dev-proxy-target" dist/; then
+              echo "dev tooling leaked into dist/ (variant: $variant)"
+              exit 1
+            fi
+            if grep -rEn "execute-api|amazonaws" dist/; then
+              echo "an API host leaked into dist/ (variant: $variant)"
+              exit 1
+            fi
+          done
+
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 10
