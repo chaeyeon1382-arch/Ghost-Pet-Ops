@@ -52,6 +52,20 @@ function readDevOptions(env: Record<string, string>): DevOptions {
   };
 }
 
+/**
+ * The few request and response members the fake handler uses. They are declared here because
+ * @types/node is not a dependency of this project, so Vite's own request type has no `url` or `method` in CI.
+ */
+interface DevRequest {
+  url?: string;
+  method?: string;
+}
+interface DevResponse {
+  statusCode: number;
+  setHeader(name: string, value: string): unknown;
+  end(body: string): unknown;
+}
+
 /** Answers GET /status with the mock data. `apply: "serve"` keeps it out of production builds. */
 function fakeStatusPlugin(scenario: Status): Plugin {
   return {
@@ -59,7 +73,9 @@ function fakeStatusPlugin(scenario: Status): Plugin {
     apply: "serve",
     configureServer(server) {
       server.config.logger.info(`[fake-status] GET /status answers with the "${scenario}" mock scenario (dev server only)`);
-      server.middlewares.use("/status", (req, res, next) => {
+      server.middlewares.use("/status", (rawReq, rawRes, next) => {
+        const req = rawReq as unknown as DevRequest;
+        const res = rawRes as unknown as DevResponse;
         // The mount path is stripped, so "/status" arrives as "/" and "/status/x" as "/x".
         const path = (req.url ?? "/").split("?")[0];
         if (req.method !== "GET" || path !== "/") {
