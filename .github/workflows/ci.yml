@@ -60,6 +60,7 @@ jobs:
       - uses: aws-actions/setup-sam@v3
         with:
           use-installer: true
+          version: 1.172.1
 
       # Validation runs offline. The region is only needed for the SAM transform. No credentials are used.
       - name: Validate SAM template
