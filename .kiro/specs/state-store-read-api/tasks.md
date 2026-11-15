@@ -69,7 +69,7 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
   - Update design 3, 4.1, 7 and 10 to match what was built: host rules, the SSRF check at request time, whole-block CORS `!If`, and validation in CI.
   - `structure.md` is already updated in the design step. Check that it still matches the files created.
 
-- [ ] 7. Review and pull request
+- [x] 7. Review and pull request
   - Run the full pytest suite and the template checks from task 5 once more. Check that no secrets are present.
   - Commit on `feature/state-store-read-api`, push, and open a PR into `main` that lists the known gaps.
 
