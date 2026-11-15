@@ -18,12 +18,12 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
 
 ## B. Pure functions and their tests
 
-- [ ] 3. Configuration
+- [x] 3. Configuration
   - Create `src/api/config.ts`: the constants (`DEFAULT_POLL_MS`, `MIN_POLL_MS`, `MAX_POLL_MS`, `MAX_BACKOFF_MS`), `resolveDataSource`, `resolvePollInterval` and `readConfig`.
   - Create `src/api/config.test.ts`: the source defaults to `mock` for unset, empty and other values, and only the exact string `api` selects `api`; the interval defaults to 10 000; values below 5 000 and above 10 000 are clamped; a numeric string works; `abc`, `""`, `NaN` and `Infinity` fall back to the default.
   - Requirements 1.1–1.2, 2.3, 11.3. Design 4.
 
-- [ ] 4. Response validation
+- [x] 4. Response validation
   - Create `src/api/validateStatus.ts` as described in design 6. It returns the data or the failing field path, never throws, and builds a new object from the allowed fields only.
   - Create `src/api/validateStatus.test.ts`:
     - valid bodies: `unknown` with `null` `responseMs` and `lastChecked`, a timestamp with `Z`, and one with `.000Z`,
