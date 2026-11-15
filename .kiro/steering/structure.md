@@ -9,12 +9,25 @@ src/
     types.ts       Status, CheckResult, Tracker (status + counters), Transition
     petState.ts    decide(), runChecks(), classify(), isFailure(), thresholds
     petState.test.ts
-  api/         Data access. Today: mock data. Later: fetch to API Gateway.
-    types.ts       StatusResponse (the API contract, see api-format.md)
+    worstStatus.ts SEVERITY_ORDER, worstStatus(): which status the pet shows for several services (display only)
+  api/         Data access. Mock data or GET /status. No React.
+    types.ts       StatusResponse (the API contract, see api-format.md), plus FetchOutcome, PollState, StatusView
     mockStatus.ts  Demo scenarios built by running the real domain logic
-    mockStatus.test.ts
+    config.ts      Build-time settings: data source (VITE_DATA_SOURCE) and poll interval (VITE_POLL_INTERVAL_MS)
+    validateStatus.ts  Checks a parsed /status body against api-format.md (pure)
+    fetchStatus.ts One GET /status request. Returns a FetchOutcome, never rejects
+    pollSchedule.ts   Retry-After parsing and the next delay, including 429 backoff (pure)
+    statusState.ts    applyOutcome() and toView(): good data, failures, "no signal" after 2 in a row (pure)
+    pollController.ts The polling loop: timers, abort, hidden-tab pause. start() and stop() are idempotent
+    *.test.ts      Tests next to each file. They run offline with fake fetch and fake timers.
+  hooks/       React glue only.
+    useStatusPolling.ts  Starts a PollController on mount and stops it on unmount
+  format/      Pure formatting helpers.
+    staleSince.ts  "HH:MM <zone>" for the "stale since" text
   components/  Presentational React components. Render props only, no data fetching.
-  App.tsx      Wires the data source to components.
+    Dashboard.tsx  Takes a StatusView and shows the pet, service rows, events and the overlay
+    ServiceList.tsx, NoSignal.tsx, EventLog.tsx, Pet.tsx
+  App.tsx      Picks the data source (mock or api) and wires it to Dashboard.
   main.tsx     Entry point.
 backend/       SAM template and Python 3.12 Lambdas
   README.md              Tests, deploy order, placeholder URLs, checker author notes
@@ -36,8 +49,10 @@ backend/       SAM template and Python 3.12 Lambdas
 ```
 
 ## Rules
-- Dependencies point inward: `components -> api types`, `api -> domain`. `domain` imports nothing outside `domain`.
-- The UI reads only `StatusResponse`. Swapping mock data for the real API must not change any component.
+- Dependencies point inward: `components -> api types, domain, format`, `hooks -> api`, `api -> domain`. `domain` imports nothing outside `domain`. `api/` and `domain/` never import React.
+- The UI reads only `StatusView` (which wraps `StatusResponse`). Swapping mock data for the real API must not change any component.
+- "No signal" is a UI state (`StatusView`), never a sixth `Status`.
+- `DEV_*` variables are read only by `vite.config.ts`. Nothing under `src/` reads them, and production builds ignore them.
 - The Python checker must implement the same rules as `src/domain/petState.ts` and reuse the same test scenarios. If one changes, change both.
 - Thresholds live as named constants at the top of `petState.ts`. Do not inline magic numbers elsewhere.
 - Backend: keys, status values, timestamp format and item validation live only in `ghostpet/model.py`. The reader and writer import them and never redefine them.

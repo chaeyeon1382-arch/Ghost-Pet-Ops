@@ -353,10 +353,11 @@ VITE_DATA_SOURCE=api DEV_API_TARGET=https://<host> npm run dev
 VITE_DATA_SOURCE=api DEV_API_TARGET=http://127.0.0.1:9 npm run dev
 ```
 
-With the closed port, requests fail every 10 s, so the overlay appears after about 20 s, which also demonstrates the 2-failure rule.
+With the closed port, the first request fails at page load and the second one interval later (10 s), so the overlay appears after about 10 s. That is the 2-failure rule at work: one failure alone shows only "Loading…".
 
-- `vite.config.ts` becomes `defineConfig(({ mode }) => …)` and reads values with `loadEnv(mode, ".", "")`. This also picks up variables set in the shell, as in the commands above. It avoids using `process` directly, because `tsconfig.json` limits `types` to `vite/client`. Whether `tsc --noEmit` accepts this file unchanged is checked when it is implemented (see section 14).
+- `vite.config.ts` becomes `defineConfig(({ command, mode }) => …)` and reads values with `loadEnv(mode, ".", "")`. The `DEV_*` options are read only when `command === "serve"`. A `vite build` ignores them completely, even if they are set. Invalid values (an unknown scenario, a target that is not an `http(s)://` URL, or both variables set) throw a clear error when the dev server starts. This also picks up variables set in the shell, as in the commands above. It avoids using `process` directly, because `tsconfig.json` limits `types` to `vite/client`. Whether `tsc --noEmit` accepts this file unchanged is checked when it is implemented (see section 14).
 - The fake plugin imports `buildMockResponse` from `src/api/mockStatus.ts`. It does not change it.
+- **GitHub Codespaces.** Vite's dev server answers only to `localhost` and IP addresses unless told otherwise, and a codespace's forwarded URL is `https://<name>-5173.app.github.dev`. Whether Vite accepts that host could not be confirmed from the documentation, so the config sets `server.allowedHosts` to `.app.github.dev` (the value of `GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN`) **only** when the `CODESPACES=true` variable that GitHub sets in every codespace is present. Outside a codespace nothing changes. If this turns out to be unnecessary, the setting is harmless. It has not been tested in a codespace.
 - Not covered: simulating a `429` or `Retry-After`, and failure injection against a real API. Those are the follow-up for the failure-injection spec. The rules are covered by unit tests instead.
 - The variables are listed in the README with the commands above. A `.env.example` is not used because `.gitignore` excludes `.env.*`.
 

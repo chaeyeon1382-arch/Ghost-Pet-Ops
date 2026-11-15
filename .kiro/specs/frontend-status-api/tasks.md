@@ -103,12 +103,13 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
 
 ## E. Dev tooling, docs and steering
 
-- [ ] 14. Dev-only fake `/status` and proxy
+- [x] 14. Dev-only fake `/status` and proxy
   - In `vite.config.ts` add `DEV_FAKE_STATUS` (plugin with `apply: "serve"`, `configureServer` only, serving `buildMockResponse(scenario)` with `Cache-Control: no-store`) and `DEV_API_TARGET` (`server.proxy`), read through `loadEnv`. Setting both, or an unknown scenario, throws a clear error at config load. The plugin name and its messages contain `fake-status`.
   - If `tsc --noEmit` rejects the file, fix it inside `vite.config.ts` with a small local type. Do not add a dependency.
   - Requirements 9.5, 10.1–10.5. Design 11.
 
 - [ ] 15. Verify the dev tooling stays out of production
+  - **Status: partly done, blocked on a decision.** Done in the sandbox: `grep -rn "DEV_" src/` finds nothing (one sample name in `config.test.ts` was renamed so that it stays true). Not possible in the sandbox: it cannot install packages, so `vite build` and the dev server cannot run, and the three builds, the `dist/` greps and the `curl` check have **not** been run. The existing CI job runs only the default build. A CI step for the `dist/` greps is proposed in the stage 4 report. The workflow is not changed until that is approved.
   - Run the four checks in design 11.1:
     - `grep -rn "DEV_" src/` finds nothing,
     - build three times: no variables, `VITE_DATA_SOURCE=api`, and `DEV_FAKE_STATUS=healthy`,
@@ -118,11 +119,11 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
   - Record the commands and results for the PR description.
   - Requirements 10.1, 10.5. Design 11.1.
 
-- [ ] 16. README
+- [x] 16. README
   - Update `README.md` with the build-time variables (`VITE_DATA_SOURCE`, `VITE_POLL_INTERVAL_MS`, the defaults and the 5–10 s range), the local `api` mode commands from design 11, the note that the checker does not exist yet so a real API shows every service as `unknown`, and a pointer to the failure-injection follow-up. No `.env.example`.
   - Requirements 10.3–10.5. Design 11, 10.1.
 
-- [ ] 17. Steering
+- [x] 17. Steering
   - Add one sentence to the Errors section of `.kiro/steering/api-format.md`: the frontend must not depend on the body of a non-2xx response, because API Gateway and CloudFront can return their own bodies (for example for 429 or 403). No other line changes.
   - Update `.kiro/steering/structure.md` to list `hooks/`, `format/`, the new `api/` files, `domain/worstStatus.ts` and the new components.
   - Requirements 9.6, 9.7. Design 12.

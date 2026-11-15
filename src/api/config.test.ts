@@ -66,7 +66,7 @@ describe("readConfig", () => {
   });
 
   it("ignores variables it does not know", () => {
-    expect(readConfig({ DEV_FAKE_STATUS: "healthy", VITE_OTHER: "x" })).toEqual({
+    expect(readConfig({ SOME_OTHER_SETTING: "healthy", VITE_OTHER: "x" })).toEqual({
       dataSource: "mock",
       baseIntervalMs: 10_000,
     });
