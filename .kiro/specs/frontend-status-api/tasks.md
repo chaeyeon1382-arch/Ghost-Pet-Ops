@@ -54,12 +54,12 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
 
 ## C. Data layer and controller
 
-- [ ] 9. Fetch wrapper
+- [x] 9. Fetch wrapper
   - Create `src/api/fetchStatus.ts` as described in design 7. It takes `fetchImpl` as a parameter.
   - Create `src/api/fetchStatus.test.ts` with a fake `fetch` (no network): success; a thrown network error; 429 with and without `Retry-After` (the header value is returned raw); 500; a body that is not JSON; a body that fails validation; an aborted signal gives `aborted`, not a failure; the body of a non-2xx response is never read (a fake body that throws when read).
   - Requirements 4.1, 4.2, 4.10, 11.1. Design 7.
 
-- [ ] 10. Polling controller
+- [x] 10. Polling controller
   - Create `src/api/pollController.ts` as described in design 9.2. It does not import React.
   - Create `src/api/pollController.test.ts` with `vi.useFakeTimers()`, a fake `fetchStatus`, and a fake visibility object built on `EventTarget`:
     - `start()` sends the first request at once and the next one after the interval; requests never overlap,
@@ -74,12 +74,12 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
 
 ## D. Components, hook and wiring
 
-- [ ] 11. Service list and event labels
+- [x] 11. Service list and event labels
   - Create `src/components/ServiceList.tsx`: one row per service in API order, with name, status as text plus the existing `status--{status}` class, Response and Checked, and "—" for `null` values.
   - Update `src/components/EventLog.tsx`: optional `services` prop, the service label (name, or the raw `serviceId` when unknown or when the prop is missing), and a unique `key`. Text only, no HTML insertion.
   - Requirements 6.4–6.5, 7, 8. Design 10.
 
-- [ ] 12. Overlay, Dashboard and styles
+- [x] 12. Overlay, Dashboard and styles
   - Create `src/components/NoSignal.tsx` (`role="status"`, "NO SIGNAL", "Can't reach the ghost. Retrying…", and "stale since …" only when a time is given) and `src/components/Dashboard.tsx` as described in design 10.
   - Add `.frame`, `.frame--stale`, `.no-signal` and `.services` styles to `src/styles.css`, with dimming by opacity plus text, not color alone. Read the file first and reuse its existing look.
   - Create `src/components/Dashboard.test.tsx` with `renderToStaticMarkup`, a fixed `staleSinceMs` and fixed time zone:
@@ -95,7 +95,7 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
     - `formatStaleSince` must be given the fixed zone, so `NoSignal` and `Dashboard` take an optional `timeZone` prop for tests (default: the viewer's zone).
   - Requirements 4, 6, 7, 8, 11.8. Design 10.
 
-- [ ] 13. Hook and `App` wiring
+- [x] 13. Hook and `App` wiring
   - Create `src/hooks/useStatusPolling.ts` as described in design 9.3.
   - Rewrite `src/App.tsx`: `readConfig(import.meta.env)`, `ApiApp` and `MockApp`, with the demo buttons only in `MockApp`. `buildMockResponse` and the demo buttons keep working as before.
   - Check: `npm run typecheck` and `npm run build` with no variables (default `mock`), and `VITE_DATA_SOURCE=api npm run build`. The existing `petState` and `mockStatus` tests still pass unchanged.
