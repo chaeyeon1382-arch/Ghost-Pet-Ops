@@ -12,7 +12,8 @@ npm run build    # typecheck + production build
 ```
 
 - Decision logic: `src/domain/petState.ts`
-- Spec: `.kiro/specs/mvp/`
+- Specs: `.kiro/specs/mvp/` (frontend), `.kiro/specs/state-store-read-api/` (backend)
+- Backend (DynamoDB, `GET /status`, SAM): [`backend/README.md`](backend/README.md)
 - Team rules: `.kiro/steering/`
 
 Licensed under the MIT License. See [LICENSE](LICENSE).

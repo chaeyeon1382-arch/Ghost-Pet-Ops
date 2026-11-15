@@ -1,0 +1,6 @@
+[
+  { "id": "site-1", "name": "Example", "url": "https://example.com/" },
+  { "id": "site-2", "name": "Example Docs", "url": "https://example.com/docs" },
+  { "id": "site-3", "name": "Example API", "url": "https://example.com/api/health" },
+  { "id": "site-4", "name": "Example Status", "url": "https://example.com/status" }
+]
