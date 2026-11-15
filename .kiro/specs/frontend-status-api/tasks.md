@@ -32,22 +32,22 @@ Requirement numbers refer to `requirements.md` and section numbers to `design.md
     - the error names the field path and does not contain the offending value.
   - Requirement 3, 11.2. Design 6.
 
-- [ ] 5. Delay and `Retry-After`
+- [x] 5. Delay and `Retry-After`
   - Create `src/api/pollSchedule.ts` with `parseRetryAfter(raw, nowMs)` and `nextDelay({ outcome, baseMs, currentMs, nowMs })`. No clock reads and no timers.
   - Create `src/api/pollSchedule.test.ts`: `Retry-After` in seconds and as an HTTP date with a fixed `nowMs`; a date in the past gives 0; `"-5"`, `"1.5"`, `"abc"`, `""` and `null` give `null`. For `nextDelay`: success gives the base; 429 with a valid header is clamped between the base and 60 s; 429 without a header doubles (20 s, 40 s, 60 s, 60 s with the default base); a header value larger than 60 s is capped; a header value smaller than the base is raised to the base; 500, network, invalid JSON and invalid shape give the base; a non-429 failure between two 429s resets to the base; `aborted` keeps the current delay.
   - Requirement 5, 11.3. Design 8.
 
-- [ ] 6. State transitions
+- [x] 6. State transitions
   - Create `src/api/statusState.ts` with `FAILURES_BEFORE_NO_SIGNAL`, `initialPollState`, `applyOutcome` and `toView`.
   - Create `src/api/statusState.test.ts`: success sets data and time and clears failures; 1 failure after data stays `live`; the 2nd consecutive failure gives `no-signal` with the data and the original `receivedAt`; more failures do not move `staleSinceMs`; a success after `no-signal` returns to `live` and resets the count; with no data, 1 failure stays `loading` and 2 give `no-signal` with `data` and `staleSinceMs` both `null`; `aborted` returns the same state and does not count as a failure; `lastFailure` carries the reason and is cleared by a success.
   - Requirement 4, 11.4. Design 9.1.
 
-- [ ] 7. Worst status
+- [x] 7. Worst status
   - Create `src/domain/worstStatus.ts` with `SEVERITY_ORDER` and `worstStatus`. It imports only `domain/types`.
   - Create `src/domain/worstStatus.test.ts`: each position in the order (down, slow, recovering, unknown, healthy) wins over everything after it; one service returns its own status; duplicates; mixed lists; one `unknown` among `healthy` services gives `unknown`; an empty list gives the `unknown` fallback.
   - Requirement 6, 11.6. Design 10.1.
 
-- [ ] 8. "stale since" formatter
+- [x] 8. "stale since" formatter
   - Create `src/format/staleSince.ts` with `formatStaleSince(ms, opts?)` as described in design 10.2.
   - Create `src/format/staleSince.test.ts` with fixed instants, `locale: "en-US"` and explicit zones: `Asia/Seoul` gives `14:05 GMT+9` for the matching instant; `America/New_York` gives a named abbreviation (`EST` or `EDT`, depending on the date); a time at local midnight gives `00:05`, not `24:05`; minutes and hours are zero-padded.
   - Requirement 4.5, 11.7. Design 10.2.
