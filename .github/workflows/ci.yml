@@ -89,3 +89,13 @@ jobs:
       # Validation runs offline. The region is only needed for the SAM transform. No credentials are used.
       - name: Validate SAM template
         run: sam validate --lint --template template.yaml --region us-east-1
+
+      # Same offline validation for the frontend hosting and demo target templates (aws-deploy-demo spec).
+      - name: Validate frontend template
+        run: sam validate --lint --template ../frontend/template.yaml --region us-east-1
+
+      - name: Validate demo template
+        run: sam validate --lint --template ../demo/template.yaml --region us-east-1
+
+      - name: Validate budget template
+        run: sam validate --lint --template ../ops/budget.yaml --region us-east-1

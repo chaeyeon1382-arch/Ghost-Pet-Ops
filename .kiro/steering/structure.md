@@ -44,6 +44,14 @@ backend/       SAM template and Python 3.12 Lambdas
       status_response.py     Reader-only response shaping (pure)
       decision.py            (planned) Python port of src/domain/petState.ts
   tests/                 pytest, outside src/ so never packaged
+frontend/      CloudFormation: private S3 bucket + CloudFront, /status on the same domain
+  template.yaml
+demo/          SAM: controllable demo target (Lambda Function URL, MODE = ok | slow | down). Deleted after the demo.
+  template.yaml
+  src/app.py
+ops/           CloudFormation: monthly cost budget with email alerts
+  budget.yaml
+docs/          Demo script, layout check list, screenshot plan
 .kiro/steering/  Team rules (this folder)
 .kiro/specs/     Feature specs
 ```

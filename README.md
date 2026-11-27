@@ -37,9 +37,48 @@ In `api` mode:
 - After an HTTP 429 the app waits longer (it uses `Retry-After` if present, otherwise it doubles the wait, up to 60 seconds).
 - The pet shows the **worst** status among the services (down, slow, recovering, unknown, healthy). Every service also has its own row.
 - The demo buttons are not shown. A way to inject failures into the real API is planned for a later spec.
-- The checker that writes real health checks does not exist yet. Until it does, the real API returns every service as `unknown`, so the pet waits ("Waiting for the first health check..."). To see other moods, use mock mode or `DEV_FAKE_STATUS` below.
+- The checker that writes real health checks is being written (see [AWS deployment](#aws-deployment-not-deployed-yet)). Until it is deployed and its schedule is on, the real API returns every service as `unknown`, so the pet waits ("Waiting for the first health check..."). To see other moods, use mock mode or `DEV_FAKE_STATUS` below.
 
 The page must be served from the same origin as `/status` (for example behind one CloudFront distribution, see `.kiro/specs/state-store-read-api/design.md` section 6.3).
+
+## AWS deployment (not deployed yet)
+
+Nothing is deployed from this repository's CI, and the templates have only been checked by `sam validate --lint` in CI. Spec: `.kiro/specs/aws-deploy-demo/`. Backend details and parameters: [`backend/README.md`](backend/README.md). Demo steps, layout checks and screenshots: [`docs/demo.md`](docs/demo.md).
+
+```
+EventBridge Scheduler (1 min) -> checker Lambda -> DynamoDB <- status Lambda <- HTTP API
+Browser -> CloudFront -> S3 (private)           (backend/template.yaml)
+                      -> /status (5 s cache) -> HTTP API    (frontend/template.yaml)
+demo target: Lambda Function URL, MODE = ok | slow | down   (demo/template.yaml, delete after the demo)
+cost alert: monthly budget with email alerts                 (ops/budget.yaml)
+```
+
+| Folder | Stack | Contents |
+|---|---|---|
+| `backend/` | backend | table, `GET /status`, checker Lambda, schedule |
+| `frontend/` | frontend | private S3 bucket, CloudFront, `/status` on the same domain (no CORS) |
+| `demo/` | demo | controllable demo target |
+| `ops/` | budget | monthly cost budget |
+
+**Order** (each step needs approval, because it can cost money): budget, demo, `services.json` pull request, backend (schedule off), one manual checker run, schedule on, frontend, build and upload. **No deployment of the backend before the checker author's pull request is merged** and the pre-deploy checks pass (see `backend/README.md`).
+
+**Frontend steps** (placeholders only, never commit real values):
+
+```bash
+VITE_DATA_SOURCE=api npm run build           # relative /status, no API host in the bundle
+aws s3 sync dist/ s3://<bucket>/ --delete
+aws cloudfront create-invalidation --distribution-id <distribution-id> --paths "/*"
+```
+
+The build needs no stack output because the path is relative. `/*` is used because it is not documented whether invalidating only `/index.html` also clears the copy served for `/`.
+
+**Things to know**
+- The CloudFront domain is `*.cloudfront.net` with the default certificate. For that certificate CloudFront fixes the minimum TLS version at TLSv1, and the setting cannot be raised ([AWS SDK docs](https://docs.aws.amazon.com/sdk-for-kotlin/api/latest/cloudfront/aws.sdk.kotlin.services.cloudfront.model/-viewer-certificate/minimum-protocol-version.html)). A custom domain would fix it, but it is not used because of cost and scope.
+- The direct API URL stays reachable (CloudFront needs it as an origin). Stage throttling still applies.
+- The demo target is public and has no throttling of its own. Anyone who finds its URL can call it. Delete the demo stack after the demo.
+- Missing values (TBD, 미확정): extra checker environment variables, the final checker `Timeout` and `MemorySize`, and the date of the checker code. They are listed in `.kiro/specs/aws-deploy-demo/design.md` section 13.
+- Cost: a monthly budget (default 10 USD) alerts by email. WAF, NAT Gateway, custom domains and provisioned capacity are not used. See `.kiro/specs/aws-deploy-demo/design.md` section 9 for the estimate and which prices are not verified.
+- Removal: delete the demo stack and remove its entry from `services.json`, empty the frontend bucket and delete the frontend stack, then delete the backend stack. Keep the budget stack or delete it.
 
 ## Trying `api` mode in development (no backend needed)
 
