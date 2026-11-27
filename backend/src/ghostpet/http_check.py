@@ -249,10 +249,11 @@ def perform_check(
         elapsed_ms = _elapsed_ms(t_start)
         return build_check_result(status_code=None, response_ms=elapsed_ms, timed_out=False)
 
-    # Use the first address returned; validate it.
+    # Prefer IPv4, keeping resolver order within each address family.
     # getaddrinfo returns (family, type, proto, canonname, sockaddr).
     # sockaddr is (ip, port) for IPv4 and (ip, port, flow, scope) for IPv6.
-    resolved_ip: str = infos[0][4][0]
+    selected = next((info for info in infos if info[0] == socket.AF_INET), infos[0])
+    resolved_ip: str = selected[4][0]
     blocked, reason = _is_blocked_address(resolved_ip)
     if blocked:
         elapsed_ms = _elapsed_ms(t_start)
