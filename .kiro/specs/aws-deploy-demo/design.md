@@ -10,6 +10,7 @@ No template or code is written by this design. YAML below is illustrative and is
 | Mark | Meaning |
 |---|---|
 | **CONFIRMED** | Stated by the checker author, or verified in the code on `main`. The source is named. |
+| **AGREED (planned)** | The checker author has answered and agreed, but the code is **not on `main` yet** (the writer and handler are in progress). It is a plan, not a verified fact. Each one is checked in the pre-deploy checks (section 12) once the code exists. |
 | **PROPOSAL** | This design's suggestion. The owner or the checker author has not agreed yet. |
 | **TBD (미확정)** | Not decided. Not assumed anywhere in this design. A deploy-time value or a task waits for it. |
 | **UNVERIFIED** | A statement from memory or from a source that could not be opened in this session. A task checks it. |
@@ -82,13 +83,15 @@ Files: see section 14. Region: TBD (미확정). CI validates in `us-east-1` only
 | Address validation before connecting | Implemented (see 1.1) | CONFIRMED in code |
 | URL allow-list enforcement | Done in `checker_app.py` | CONFIRMED as a plan. The file does not exist yet. |
 | Memory start value | 128 MB, then adjust from measured duration and memory use | CONFIRMED as a starting point |
+| One Lambda, services checked one after another, no per-service Lambda invocation | The author keeps one function, sequential checks, and does not adopt a design with one Lambda call per service | AGREED (planned). Update of 2026-11-27. |
+| Timeout | Decided after the whole-run time has been reviewed | CONFIRMED as the rule. The number is still TBD. |
 
 ### 3.2 TBD (미확정): not assumed anywhere
 
 | Item | What the design does meanwhile |
 |---|---|
 | Additional environment variables | The template sets only `TABLE_NAME` and `EVENT_RETENTION_DAYS`. Nothing else. |
-| Sequential or parallel checks | Sequential is the design basis (author's instruction). Final choice TBD. |
+| Whole-run time limit (how the handler stops before Lambda kills it, including the missing 5 s limit on DNS) | Being designed by the checker author. See C-3 in section 13. |
 | Lambda `Timeout` | Template parameter with **no default**. Candidates and reasoning in section 5. |
 | Final `MemorySize` | Parameter, default 128 (the confirmed starting value). Final value TBD after measurement. |
 | Date of the writer and handler | TBD. Draft PR will be shared first. |
@@ -222,7 +225,7 @@ The checker author states, and `http_check.py` documents, that the 5 s HTTP limi
 
 This "30 s" is not a guarantee. Each `recv` has its own 5 s limit, so a server that sends header bytes slowly could keep a request open longer. The Lambda `Timeout` is the only hard limit.
 
-DynamoDB time per service (PROPOSAL, not measured): about 2 s allowance. Normal calls take milliseconds. The write contract allows up to 3 attempts, each with a `GetItem` and a write, plus backoff of 100 ms and 300 ms. A stuck AWS endpoint is not bounded by this allowance. boto3's default connect and read timeouts are long (60 s each, UNVERIFIED), so open item C-2 asks the checker author to set shorter client timeouts.
+DynamoDB time per service (PROPOSAL, not measured): about 2 s allowance. Normal calls take milliseconds. The write contract allows up to 3 attempts, each with a `GetItem` and a write, plus backoff of 100 ms and 300 ms. A stuck AWS endpoint is not bounded by this allowance. boto3's default connect and read timeouts are long (60 s each, UNVERIFIED), so open item C-2 asked the checker author to set shorter client timeouts. The author's **candidate** values are a connect timeout of 2 s, a read timeout of 3 s and 2 attempts in total (AGREED as candidates, planned, not final, not in code). From these values, this design calculates (not measured): one SDK call can take up to about 2 x (2 + 3) = 10 s when DynamoDB does not answer. One service uses a `GetItem` and a write, so up to about 20 s, and up to about 60 s if the write contract's 3 attempts (read-API design 4.1 step 7) all fail the same way. This is a full DynamoDB outage, a different case from the slow sites in the formula below. The `Timeout` does not try to cover both at once. The remaining-time check of C-3 is the control for it, and whether that check also runs between the in-service retries is a question for the author.
 
 ### 5.2 Formula
 
@@ -245,7 +248,7 @@ Author's worst case, N = 4:            1 s + 4 x (30 s + 2 s)                   
 | **150 s (PROPOSAL)** | The author's worst case for N = 4 with about 15% margin. | More than 4 services, or checks that exceed the author's estimate. | Yes, at most 3 runs |
 | 180 s or more | Larger N. | | Yes |
 
-**What a timeout does:** Lambda stops the process without cleanup. Services that were already written stay written (each service is written on its own). The service in progress loses its check. Services after it get no check in that run. With a fixed order and a persistent hang in an early service, later services could be starved every minute. That is the strongest argument for a larger timeout, and it can also be solved in the checker's code (open item C-3), not in the template.
+**What a timeout does:** Lambda stops the process without cleanup. Services that were already written stay written (each service is written on its own). The service in progress loses its check. Services after it get no check in that run. With a fixed order and a persistent hang in an early service, later services could be starved every minute. The checker author's answer to C-3 (AGREED, planned, not in code yet) reduces this risk without changing the template: one Lambda with sequential checks, a check of the Lambda's remaining time before each service so the run can end cleanly instead of being killed, and a service order that rotates between runs so the same service is not always last. Two limits remain. The remaining-time check cannot interrupt one call that is already running, and DNS resolution has no 5 s limit, so one hanging service can still use a large part of the run. The author will look at this in the whole-run time-limit design. Until that design exists, the candidate table above and the 150 s ceiling are unchanged, and the final `Timeout` stays TBD.
 
 **Cost of a long timeout:** it costs nothing on normal days, because billing follows actual duration. Worst-case ceiling: every run lasts the full timeout, 43,200 runs per month x 150 s x 0.125 GB = 810,000 GB-s. Lambda's free tier is 400,000 GB-s per month and arm64 is priced per GB-s (about 10 USD at the ceiling, UNVERIFIED, price page checked in the cost-verification task). This ceiling also needs every site to hang every minute, so it is not an expected cost. The budget alert (section 9) covers it.
 
@@ -366,7 +369,7 @@ With `AuthType: NONE`, Lambda does not authenticate the caller, but the function
 - **Candidates (PROPOSAL, nothing measured):** `https://www.wikipedia.org/`, `https://www.python.org/`. Spare: `https://github.com/`. The sandbox cannot reach the Internet (every request returned connection code 000), so no response time was measured here.
 - **Selection rules:** answers the exact URL with 2xx or 3xx without relying on redirect-following, normal response time clearly below 2000 ms (`SLOW_THRESHOLD_MS`), stable, and light for one request per minute. Neither site is run by the team, so the monitoring is one `GET` per minute with no extra headers.
 - **Measurement (before the URLs are committed):** from the checker's own AWS region, after the owner approves a deployment or a short test, run each URL several times at different hours and record status code and total time. A measurement from another network is not final. A candidate whose normal time is close to 2 s is dropped.
-- **Risks to check in that measurement:** a site may answer cloud IP ranges with 403 (it would show as `down`). `perform_check` validates and uses only the **first** address from `getaddrinfo`. If the first address were IPv6 and the Lambda has no IPv6 route, the connection would fail and be counted as a failure (UNVERIFIED, open item C-4).
+- **Risks to check in that measurement:** a site may answer cloud IP ranges with 403 (it would show as `down`). `perform_check` on `main` validates and uses only the **first** address from `getaddrinfo`. If the first address were IPv6 and the Lambda has no IPv6 route, the connection would fail and be counted as a failure. The checker author will change it to choose an IPv4 address and connect only to the address that was validated (open item C-4, AGREED, planned, not in code yet). The measurement should still be done after that change, and it must show no failure that is caused by the address family.
 - **Commit rule:** `services.json` and the PR contain no account ID, key or email. The demo URL follows 7.1.
 
 ## 9. Cost and budget
@@ -442,17 +445,17 @@ Before any deployment, compare the checker code on `main` with the template.
 
 | # | Check | Pass condition |
 |---|---|---|
-| P-0 | The writer and handler PR is merged and `ade97ff` or later contains `checker_app.py` and `checker_writer.py` | Both files exist on `main` |
+| P-0 | The writer and handler PR is merged and `ade97ff` or later contains `checker_app.py` and `checker_writer.py`. The target for the author's **Draft PR** is Saturday 2026-11-28 (a Draft PR is not a deployment basis, only a preview). The author's Kiro credits are used up, so the date can move. | Both files exist on `main`. `http_check.py`, `decision.py` and `checker_items.py` are read again on `main`, because the planned changes (C-2, C-4) touch them. |
 | P-1 | Handler | `checker_app.py` defines `handler(event, context)`, and the template's `Handler` equals `checker_app.handler` |
 | P-2 | Environment variables | Every `os.environ` / `os.getenv` in `checker_app.py`, `checker_writer.py` and the files they import is in the template, and nothing in the template is unused. Today the template has `TABLE_NAME` and `EVENT_RETENTION_DAYS` only. Any additional variable is a TBD (미확정) that blocks the deploy until it is added with its meaning. |
 | P-3 | Write contract | `checker_writer.py` follows `state-store-read-api/design.md` section 4 (conditional writes, conditional event `Put`, `ClientRequestToken`, retry rules). Needed for 4.4. |
 | P-4 | IAM actions | Every DynamoDB call used is covered by `GetItem`, `PutItem`, `UpdateItem`. For example a `Query`, `Scan` or `ConditionCheck` would need a role change. |
 | P-5 | Payload | The handler works with `{}` and does not depend on the event contents. |
-| P-6 | URL allow-list | `checker_app.py` passes only URLs from `load_services()` to `perform_check`. |
-| P-7 | Blocked address | `BlockedAddressError` is caught per service, logged without secrets, and recorded as a failed check. Otherwise one bad host would end the whole run (open item C-1). |
+| P-6 | URL allow-list and address choice | `checker_app.py` passes only URLs from `load_services()` to `perform_check`. `http_check.py` chooses an IPv4 address and connects only to the address it validated (C-4). |
+| P-7 | Blocked address | `BlockedAddressError` is caught per service. Only that service is recorded as failed, nothing secret is logged, and the other services are still checked (C-1, AGREED, planned). |
 | P-8 | Logging | No secret, header or body in logs. |
-| P-9 | Order and N | The services order, sequential or parallel, and N are known, and the Timeout formula in 5.2 is recalculated with them. |
-| P-10 | boto3 client timeouts | The DynamoDB client has short connect and read timeouts (open item C-2). |
+| P-9 | Order, N and the whole-run limit | One Lambda with sequential checks (agreed). The remaining-time check, the order rotation, and how the run ends when DNS or a connection hangs (C-3) are in the code. N is known, and the Timeout formula in 5.2 is recalculated with them. The final `Timeout` is decided here, after the whole-run time has been reviewed. |
+| P-10 | boto3 client timeouts | The DynamoDB client has the agreed connect timeout, read timeout and attempt limit (candidates 2 s, 3 s, 2 attempts, C-2). The final values are in the code, and the calculation in 5.1 is redone with them. |
 | P-11 | `sam validate --lint` | Passes for all templates, and `sam build` succeeds. |
 | P-12 | Final values | `CheckerTimeoutSeconds` and `CheckerMemorySize` are agreed with the checker author and written in the README. |
 
@@ -462,17 +465,17 @@ Before any deployment, compare the checker code on `main` with the template.
 |---|---|---|
 | 1 | Handler name | **CONFIRMED**: `checker_app.handler`. Checked again in P-1. |
 | 2 | Environment variables | **CONFIRMED**: `TABLE_NAME`, `EVENT_RETENTION_DAYS` (default 7). **TBD (미확정)**: any additional variable. |
-| 3 | Sequential or parallel | **TBD (미확정)**. Sequential is the design basis. |
-| 4 | Timeout | **TBD (미확정)**. Candidates and reasons in 5.3. Proposal: 150 s as a ceiling, then lower. |
+| 3 | Sequential or parallel | **AGREED (planned)**: one Lambda, sequential checks, no per-service Lambda invocation. Update of 2026-11-27. |
+| 4 | Timeout | **TBD (미확정)**. The author decides it after reviewing the whole-run time. Candidates and reasons in 5.3. Owner-approved initial ceiling: 150 s, then lower. |
 | 5 | Memory size | **128 MB CONFIRMED as the start**. Final value **TBD (미확정)**. |
 | 6 | Payload | **CONFIRMED**: `{}`. Handler behavior with it: TBD (checked in P-5). |
 | 7 | 3xx | **CONFIRMED**: not followed, counted as success (code: `http_check.py`, `decision.py`). |
 | 8 | Schedule retry behavior the checker expects | **TBD (미확정)**. Proposal: no Lambda retries and a Scheduler retry limited to 60 s (4.1, 4.2). |
-| C-1 | `perform_check` raises `BlockedAddressError` instead of returning a failed result. Does `checker_app.py` catch it per service? | **TBD (미확정)** |
-| C-2 | DynamoDB client timeouts and retries (boto3 defaults are long) | **TBD (미확정)** |
-| C-3 | A hanging first service starves later services each minute (fixed order). Rotation, a wall-clock guard or parallel checks? | **TBD (미확정)** |
-| C-4 | The first `getaddrinfo` result is the only one used. A first IPv6 result could fail on a Lambda without IPv6 routes. | **TBD (미확정)**. Checked in the measurement in section 8. |
-| C-5 | Draft PR timing for `checker_writer.py` and `checker_app.py` | **TBD (미확정)** |
+| C-1 | `perform_check` raises `BlockedAddressError` instead of returning a failed result. Does `checker_app.py` catch it per service? | **AGREED (planned)**: `checker_app.py` catches it per service, records only that service as failed, and continues with the other services. Not implemented yet. Checked in P-7. |
+| C-2 | DynamoDB client timeouts and retries (boto3 defaults are long) | **AGREED (planned) as candidates**: connect timeout 2 s, read timeout 3 s, 2 attempts in total. The values are candidates, not final, and not implemented yet. Effect on the time calculation: 5.1. Checked in P-10. |
+| C-3 | A hanging first service starves later services each minute (fixed order). Rotation, a wall-clock guard or parallel checks? | **AGREED (planned)**: keep one Lambda, sequential checks, a check of the remaining Lambda time before each service, and a rotating service order. Not adopted: one Lambda invocation per service. **TBD (미확정)**: the whole-run time limit. The author will check, in that design, that DNS resolution has no 5 s limit and what happens when one call hangs. Checked in P-9. |
+| C-4 | The first `getaddrinfo` result is the only one used. A first IPv6 result could fail on a Lambda without IPv6 routes. | **AGREED (planned)**: select an IPv4 address, and connect only to the IP that was validated. Not implemented yet. Checked in P-6 and in the measurement in section 8. |
+| C-5 | Draft PR timing for `checker_writer.py` and `checker_app.py` | **Target: Saturday 2026-11-28** (Draft PR, shared first). The author's Kiro credits are used up, so the date is a target and not a promise. The date of completion and merge is **TBD (미확정)**. |
 
 No file of the checker author is changed to resolve these. Questions go to the author as comments or a short note.
 

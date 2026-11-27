@@ -108,17 +108,17 @@ Order matters only where a task says so. Each task ends with the checks written 
 
 Run after the checker author's pull request is merged, and **again** if the checker code changes later. Each check produces a short written result (pass, or the difference found and who settles it). No file of the checker author is changed. A difference is sent to the author as a comment or note. These are read-only checks of the repository, so no AWS approval is needed.
 
-- [ ] P-0. Gate: `checker_writer.py` and `checker_app.py` exist on `main` (after `git fetch`). If the author's work is still a Draft PR, stop here. The Draft PR can be read for early feedback, but it is not a deployment basis.
+- [ ] P-0. Gate: `checker_writer.py` and `checker_app.py` exist on `main` (after `git fetch`). Read `http_check.py`, `decision.py` and `checker_items.py` again, because the planned changes for C-2 and C-4 touch them. The author's Draft PR target is 2026-11-28 and the date can move. If the author's work is still a Draft PR, stop here. The Draft PR can be read for early feedback, but it is not a deployment basis.
 - [ ] P-1. Handler: `checker_app.py` defines `handler(event, context)`, and the template's `Handler` equals `checker_app.handler`.
 - [ ] P-2. Environment variables: list every `os.environ` and `os.getenv` use in `checker_app.py`, `checker_writer.py` and everything they import. The template must set exactly those, and today it sets `TABLE_NAME` and `EVENT_RETENTION_DAYS` only. An extra variable is a TBD (미확정) that blocks the deploy until the author states its meaning and the template is updated (B-1 follow-up).
 - [ ] P-3. Write contract: compare `checker_writer.py` with `state-store-read-api/design.md` section 4 (step 7 retry rules, 4.2 conditions, 4.3 transaction and cancellation reasons, 4.4 token). This check supports the "no concurrency limit" decision (design 4.4).
 - [ ] P-4. IAM actions: list every DynamoDB call used. All must be covered by `GetItem`, `PutItem`, `UpdateItem`. If another action appears (`Query`, `Scan`, `ConditionCheckItem`), the role change goes through the owner first.
 - [ ] P-5. Payload: the handler works with `{}` and does not depend on the event contents.
-- [ ] P-6. URL allow-list: only URLs from `load_services()` reach `perform_check`.
-- [ ] P-7. Blocked address: `BlockedAddressError` is handled per service (open item C-1), logged without secrets, and the run continues with the next service.
+- [ ] P-6. URL allow-list and address choice: only URLs from `load_services()` reach `perform_check`, and `http_check.py` chooses an IPv4 address and connects only to the validated IP (C-4).
+- [ ] P-7. Blocked address: `BlockedAddressError` is handled per service (C-1, agreed, planned), only that service is recorded as failed, nothing secret is logged, and the run continues with the next service.
 - [ ] P-8. Logging: no secret, header or response body is logged.
-- [ ] P-9. Order and N: read how services are iterated (sequential or parallel, order, any rotation or wall-clock guard, open item C-3) and the number of services in the final `services.json`. Recalculate the `Timeout` with the formula in design 5.2.
-- [ ] P-10. boto3 client timeouts and retries (open item C-2).
+- [ ] P-9. Order, N and the whole-run limit: one Lambda with sequential checks (agreed). Read the remaining-time check, the order rotation, and how the run ends when DNS or a connection hangs (C-3, whole-run limit still TBD). Read N in the final `services.json`. Recalculate the `Timeout` with the formula in design 5.2, and decide the final `Timeout` here with the checker author.
+- [ ] P-10. boto3 client timeouts and retries: connect 2 s, read 3 s, 2 attempts are candidates (C-2). Redo the DynamoDB time calculation in design 5.1 with the final values.
 - [ ] P-11. `sam validate --lint` passes for all templates in CI, and `sam build` succeeds (run in CI or by the owner, since the sandbox has no SAM CLI).
 - [ ] P-12. Final values: `CheckerTimeoutSeconds` and `CheckerMemorySize` are agreed with the checker author and written in the README. Starting values: 150 s (ceiling, owner approved) and 128 MB (confirmed start).
 
@@ -156,7 +156,7 @@ Only the owner decides when to start. Each step names its gate and its check. Th
   | C. Default = the **tuned value** after E-1 | Short default that fits real data | Wrong if `services.json` grows. Design 5.2 requires recalculating the value whenever N changes, so a comment next to the default says so. |
 
   Recommendation: option A until E-1 is done, then option C with a comment that names N and the date. The change is a small edit of B-1's parameter and the README, in a pull request. It needs the checker author's agreement first.
-- [ ] E-3. When the checker author answers C-1 to C-4 (the owner passes the answers), update `design.md` section 13 statuses and re-run the affected P checks (C-1: P-7, C-2: P-10, C-3: P-9, C-4: D-3).
+- [ ] E-3. C-1 to C-4 were answered on 2026-11-27 and are recorded in `design.md` section 13 as agreed and planned (not implemented). When the code arrives, re-run the affected P checks (C-1: P-7, C-2: P-10, C-3: P-9, C-4: P-6 and D-3) and change the status to CONFIRMED only after reading the code. Still TBD (미확정): the whole-run time limit and the final `Timeout`.
 - [ ] E-4. If the author later adds an environment variable, update the template (B-1) in the same pull request that documents it, and repeat P-2.
 
 ---

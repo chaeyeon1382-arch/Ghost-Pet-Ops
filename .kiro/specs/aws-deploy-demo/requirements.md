@@ -178,11 +178,11 @@ design.md and tasks.md SHALL keep this list, with a status for each item (TBD or
 6. Payload. **CONFIRMED**: `{}`. Whether the handler reads it: checked before deployment.
 7. Whether 3xx is treated as success and not followed. The owner decided: not followed, counted as success (`petState.ts` and `security.md`). **CONFIRMED**: `http_check.py` and `decision.py` do this.
 8. Schedule retry behavior that the checker expects. **TBD (미확정)**. Proposal in design.md 4.1 and 4.2.
-9. (C-1) Whether `checker_app.py` catches `BlockedAddressError` per service. **TBD (미확정)**.
-10. (C-2) DynamoDB client timeouts and retries. **TBD (미확정)**.
-11. (C-3) Protection against a hanging service starving later services. **TBD (미확정)**.
-12. (C-4) Use of only the first `getaddrinfo` result (IPv6 risk). **TBD (미확정)**.
-13. (C-5) Timing of the Draft PR for `checker_writer.py` and `checker_app.py`. **TBD (미확정)**.
+9. (C-1) `checker_app.py` catches `BlockedAddressError` per service and continues. **AGREED (planned)**, not implemented yet.
+10. (C-2) DynamoDB client timeouts and retries. **AGREED (planned) as candidates** (connect 2 s, read 3 s, 2 attempts), not final, not implemented yet.
+11. (C-3) One Lambda, sequential checks, remaining-time check and rotating order. **AGREED (planned)**. The whole-run time limit (including the missing 5 s limit on DNS) is **TBD (미확정)**.
+12. (C-4) Choose an IPv4 address and connect only to the validated IP. **AGREED (planned)**, not implemented yet.
+13. (C-5) Draft PR for `checker_writer.py` and `checker_app.py`: target 2026-11-28. Completion date **TBD (미확정)**.
 
 ## Requirement 14: Protected files and CI
 
