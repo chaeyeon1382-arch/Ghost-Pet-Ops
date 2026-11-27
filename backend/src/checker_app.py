@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -26,6 +27,31 @@ _WRITE_BUDGET_MS = 1000 * (2 * (_DYNAMO_CONNECT_TIMEOUT_S + _DYNAMO_READ_TIMEOUT
 _CHECK_BUDGET_MS = int(1000 * (3 * DEFAULT_TIMEOUT_S + 15)) + _WRITE_BUDGET_MS
 
 
+_ERROR_CODE_PATTERN = re.compile(r"[A-Za-z0-9_.]{1,64}")
+
+
+def _error_code(exc: BaseException) -> str | None:
+    """Return the AWS ``response["Error"]["Code"]`` or None when there is none."""
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return None
+    error = response.get("Error")
+    code = error.get("Code") if isinstance(error, dict) else None
+    if isinstance(code, str) and _ERROR_CODE_PATTERN.fullmatch(code):
+        return code
+    return None
+
+
+def _log_failure(service_id: str | None, exc: BaseException) -> None:
+    """Log only the service id, exception class and AWS error code.
+
+    The exception message and traceback are never logged: AWS error messages
+    can contain IAM role ARNs and the account ID.
+    """
+    prefix = f"service={service_id} " if service_id is not None else ""
+    logger.error("%serror_class=%s error_code=%s", prefix, type(exc).__name__, _error_code(exc))
+
+
 @lru_cache(maxsize=1)
 def _get_dynamodb(table_name: str) -> tuple[Any, Any]:
     import boto3  # Lambda runtime dependency
@@ -45,6 +71,16 @@ def _get_dynamodb(table_name: str) -> tuple[Any, Any]:
 
 def handler(event: dict, context: Any) -> None:
     """Run a sequential check of the configured services for any scheduler payload."""
+    try:
+        _run_checks(context)
+    except Exception as exc:
+        _log_failure(None, exc)
+        # Fail the invocation, but with a fixed message so the Lambda runtime's own
+        # error log cannot repeat the original message or traceback.
+        raise RuntimeError("Checker invocation failed") from None
+
+
+def _run_checks(context: Any) -> None:
     services = load_services()
     table_name = os.environ["TABLE_NAME"]
     retention_days = int(os.environ.get("EVENT_RETENTION_DAYS", "7"))
@@ -91,5 +127,5 @@ def handler(event: dict, context: Any) -> None:
             )
             if outcome is WriteOutcome.TIME_BUDGET_EXHAUSTED:
                 logger.warning("Insufficient Lambda time to save check for service %s", service.id)
-        except Exception:
-            logger.exception("Check failed for service %s", service.id)
+        except Exception as exc:
+            _log_failure(service.id, exc)

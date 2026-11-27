@@ -130,3 +130,102 @@ def test_http_prefers_ipv4_and_validates_the_selected_address(monkeypatch, ipv4,
             http_check.perform_check(SERVICES[0].url)
         pinned = next(h for h in opener.call_args.args if isinstance(h, http_check._PinnedHTTPSHandler))
         assert pinned._pinned_ip == ipv4
+
+
+# --- Log content: no exception message, traceback, ARN or account ID ---------
+
+ACCOUNT_ID = "123456789012"
+ROLE_ARN = f"arn:aws:sts::{ACCOUNT_ID}:assumed-role/stack-CheckerFunctionRole-ABC/stack-checker"
+SECRET_MESSAGE = (
+    f"An error occurred (AccessDeniedException) when calling the GetItem operation: "
+    f"User: {ROLE_ARN} is not authorized to perform: dynamodb:GetItem "
+    f"on resource: arn:aws:dynamodb:us-east-1:{ACCOUNT_ID}:table/stack-StateTable-XYZ"
+)
+
+
+class ClientError(Exception):
+    """Stand-in for botocore.exceptions.ClientError (same name and response shape)."""
+
+    def __init__(self, code="AccessDeniedException", message=SECRET_MESSAGE):
+        super().__init__(message)
+        self.response = {"Error": {"Code": code, "Message": message}}
+
+
+def _assert_log_is_clean(caplog, *, expected):
+    assert caplog.records
+    for record in caplog.records:
+        assert record.exc_info is None
+        assert record.exc_text is None
+    text = caplog.text + "".join(r.getMessage() for r in caplog.records)
+    for secret in (ACCOUNT_ID, ROLE_ARN, SECRET_MESSAGE, "arn:aws", "Traceback", "StateTable"):
+        assert secret not in text
+    for fragment in expected:
+        assert fragment in text
+
+
+def _stored_healthy(last_checked="2026-11-26T00:00:00Z"):
+    return {
+        "Item": {
+            "pk": "SERVICES", "sk": "SERVICE#a", "id": "a", "name": "a", "status": "healthy",
+            "responseMs": 100, "lastChecked": last_checked, "consecutiveFailures": 0,
+            "consecutiveSlow": 0, "consecutiveFast": 3, "version": 5,
+        }
+    }
+
+
+@pytest.mark.parametrize("failing_call", ["get_item", "update_item"])
+def test_boto_errors_from_writer_are_logged_without_message(
+    monkeypatch, caplog, scheduled_check, failing_call
+):
+    context, check, _, dynamodb = scheduled_check
+    # Use the real writer so _read_record and _write_no_transition errors propagate.
+    monkeypatch.setattr(checker_app, "write_check_result", checker_writer.write_check_result)
+    monkeypatch.setattr(checker_app, "format_ts", lambda _dt: CHECKED_AT)
+    table, client = Mock(), Mock()
+    table.name = "state-table"
+    table.get_item.return_value = _stored_healthy()
+    getattr(table, failing_call).side_effect = ClientError()
+    dynamodb.return_value = (table, client)
+    monkeypatch.setattr(checker_app, "load_services", lambda: SERVICES[:1])
+    with caplog.at_level("DEBUG"):
+        checker_app.handler({}, context)
+    getattr(table, failing_call).assert_called_once()
+    _assert_log_is_clean(
+        caplog, expected=["service=a", "error_class=ClientError", "error_code=AccessDeniedException"]
+    )
+
+
+def test_non_aws_exception_has_no_error_code(caplog, scheduled_check):
+    context, check, _, _ = scheduled_check
+    check.side_effect = RuntimeError(SECRET_MESSAGE)
+    with caplog.at_level("DEBUG"):
+        checker_app.handler({}, context)
+    _assert_log_is_clean(caplog, expected=["error_class=RuntimeError", "error_code=None"])
+
+
+def test_malformed_error_code_is_not_logged(caplog, scheduled_check):
+    context, check, _, _ = scheduled_check
+    error = ClientError(code=f"bad code {ACCOUNT_ID}\nnewline")
+    check.side_effect = error
+    with caplog.at_level("DEBUG"):
+        checker_app.handler({}, context)
+    _assert_log_is_clean(caplog, expected=["error_code=None"])
+
+
+def test_top_level_error_is_logged_without_message_and_still_fails(
+    monkeypatch, caplog, scheduled_check
+):
+    context, check, _, _ = scheduled_check
+
+    def broken():
+        raise ClientError()
+
+    monkeypatch.setattr(checker_app, "load_services", broken)
+    with caplog.at_level("DEBUG"), pytest.raises(RuntimeError) as raised:
+        checker_app.handler({}, context)
+    assert SECRET_MESSAGE not in str(raised.value)
+    assert ACCOUNT_ID not in str(raised.value)
+    assert raised.value.__cause__ is None
+    check.assert_not_called()
+    _assert_log_is_clean(caplog, expected=["error_class=ClientError", "error_code=AccessDeniedException"])
+    assert all("service=" not in r.getMessage() for r in caplog.records)
