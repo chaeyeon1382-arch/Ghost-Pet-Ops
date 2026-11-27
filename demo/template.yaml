@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  Ghost Pet Ops demo target: a small public endpoint whose behavior (ok, slow, down) is set by the MODE environment
+  variable in the Lambda console. Delete this stack after the demo. See .kiro/specs/aws-deploy-demo/design.md section 7.
+
+Parameters:
+  InitialMode:
+    Type: String
+    Default: ok
+    AllowedValues: [ok, slow, down]
+    Description: Starting value of MODE. Change it later in the Lambda console (Configuration, Environment variables).
+
+Resources:
+  DemoFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-demo
+      RetentionInDays: 7
+
+  # Only writes to its own log group. No access to the state table or anything else (requirement 2.4).
+  DemoFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Ghost Pet Ops demo target. Writes its own logs only.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: write-own-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt DemoFunctionLogGroup.Arn
+
+  DemoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-demo
+      Description: Controllable demo target for Ghost Pet Ops (MODE = ok, slow, down)
+      CodeUri: src/
+      Handler: app.handler
+      Runtime: python3.12
+      Architectures:
+        - arm64
+      MemorySize: 128
+      # The slow mode waits 3 s, so 10 s leaves room.
+      Timeout: 10
+      Role: !GetAtt DemoFunctionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref DemoFunctionLogGroup
+      Environment:
+        Variables:
+          MODE: !Ref InitialMode
+      # Public on purpose, so the checker can call it without credentials. It is the only public endpoint of this stack.
+      FunctionUrlConfig:
+        AuthType: NONE
+
+Outputs:
+  DemoUrl:
+    Description: >-
+      Function URL of the demo target. Before it is committed to services.json, check that it contains no AWS
+      account id (aws-deploy-demo tasks D-4).
+    Value: !GetAtt DemoFunctionUrl.FunctionUrl
+  DemoFunctionName:
+    Description: Function to open in the Lambda console to change MODE
+    Value: !Ref DemoFunction
