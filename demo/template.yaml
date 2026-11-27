@@ -66,6 +66,19 @@ Resources:
       FunctionUrlConfig:
         AuthType: NONE
 
+  # Since October 2025 a new Function URL needs BOTH lambda:InvokeFunctionUrl and lambda:InvokeFunction in the
+  # function's resource policy, even with AuthType NONE. Without both, every call gets 403, and the checker would
+  # count the demo target as down in every mode. SAM's FunctionUrlConfig creates the InvokeFunctionUrl statement.
+  # It is not documented whether it also creates the InvokeFunction one, so it is stated here. The condition
+  # limits this statement to calls that arrive through the Function URL. See aws-deploy-demo design 7.3.
+  DemoFunctionInvokeViaUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DemoFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
 Outputs:
   DemoUrl:
     Description: >-
