@@ -181,7 +181,7 @@ CheckerSchedule:
 ```
 
 - The role has one action on one resource. This is the only `Resource` that is not a wildcard and the template has no `Resource: "*"` (requirement 2.3).
-- `aws:SourceAccount` in the trust policy limits the role to this account's Scheduler (confused-deputy protection). Adding an `aws:SourceArn` condition for the schedule is also possible (the ARN can be built from the fixed schedule name). Both conditions are UNVERIFIED against the Scheduler documentation in this session. A task checks them. If the check fails, the condition is removed and the reason is noted here.
+- `aws:SourceAccount` in the trust policy limits the role to this account's Scheduler (confused-deputy protection). The Scheduler guide recommends the `aws:SourceArn` and `aws:SourceAccount` condition keys for the execution role ([AWS docs](https://alb.prod.www.docs.aws.a2z.com/scheduler/latest/UserGuide/cross-service-confused-deputy-prevention.html)), so `aws:SourceAccount` is CONFIRMED as recommended. **The template uses `aws:SourceAccount` only.** A `aws:SourceArn` condition must name the **schedule group** (`schedule-group/default`), not the individual schedule. A condition on the schedule ARN makes `CreateSchedule` fail with "execution role must allow Scheduler to assume the role" (reported in two public repositories that quote the documentation, and not read on the official page here, so UNVERIFIED). That is why `SourceArn` is left out. See section 16.
 - **Scheduler retry policy.** Scheduler's default is to retry for up to 24 hours and up to 185 times when delivery fails ([AWS re:Post](https://repost.aws/knowledge-center/eventbridge-resolve-failedinvocation-errors)). Delivered late, a one-minute tick is worthless and would pile up. The policy is limited to 2 attempts within 60 s. Delivery means "Lambda accepted the event". A function error after that is handled by 4.1, not by this policy.
 - `CheckerScheduleState` (`ENABLED` or `DISABLED`). **Owner approved: default `DISABLED`.** The first deploy creates everything with the schedule off. The deployer invokes the function once by hand, reads the log, and then enables the schedule with a second `sam deploy`. This keeps "deploy" and "start spending requests on other people's sites" as two separate decisions. The owner can choose `ENABLED` as default instead.
 - The schedule is a stack resource, so it is deleted with the stack (requirement 3.5).
@@ -275,11 +275,11 @@ Plain CloudFormation (no Lambda, so no SAM transform is needed). Parameters: `Ap
 ### 6.1 Distribution
 
 - **Origins:** the bucket's regional domain with `FrontendOac`, and the API (`ApiDomain`) as a custom origin with `OriginProtocolPolicy: https-only`, TLS 1.2 only, and `OriginReadTimeout: 10` (the status Lambda has a 5 s timeout and cache `MaxTTL` is 10 s).
-- **Default behavior** (static files): S3 origin. Methods GET and HEAD. Redirect HTTP to HTTPS. Compression on. Managed cache policy `CachingOptimized` and managed response headers policy `SecurityHeadersPolicy` (IDs are re-checked against the AWS docs at implementation time, UNVERIFIED here).
+- **Default behavior** (static files): S3 origin. Methods GET and HEAD. Redirect HTTP to HTTPS. Compression on. Managed cache policy `CachingOptimized` and managed response headers policy `SecurityHeadersPolicy` (the managed policy IDs below appear in several public repositories, and the `SecurityHeadersPolicy` ID is quoted from the AWS docs in an AWS re:Post question. The official AWS pages could not be opened here, so all three IDs stay UNVERIFIED against the official list, see section 16. A wrong ID makes the stack creation fail at once, not silently).
 - **`/status` behavior:** path pattern `/status` (exact path, query strings are ignored by the pattern). API origin. Methods GET and HEAD only. `StatusCachePolicy`. Origin request policy `AllViewerExceptHostHeader`, because API Gateway needs its own `Host` (from the read-API design 6.3). Redirect HTTP to HTTPS. Same security-headers policy.
 - **Default root object:** `index.html`. No custom error response that replaces a status with `index.html` (requirement 5.5). Reason: custom error responses apply to the whole distribution, so a 403 from `/status` would become an HTML page with status 200. The frontend would then fail on JSON parsing instead of seeing the real HTTP failure, which is still handled, but would be misleading.
-- **Error caching:** `CustomErrorResponses` entries for 500, 502, 503 and 504 with **only** `ErrorCachingMinTTL: 1` (no `ResponseCode` and no `ResponsePagePath`). They keep the original status and body and shorten how long CloudFront remembers the error. Without this, CloudFront keeps an origin error for its default (10 s, UNVERIFIED), so a short backend problem would outlive the problem. A 429 from API Gateway is not in the list of codes that can be configured, and whether CloudFront caches it is UNVERIFIED. It is limited in any case by the 10 s cache `MaxTTL`. Task F-5 checks this on the deployed stack.
-- **TLS:** default CloudFront certificate and domain (no custom domain). With the default certificate CloudFront fixes the minimum protocol version, and the `MinimumProtocolVersion` setting cannot raise it (UNVERIFIED, documented behavior as remembered). This limit is accepted and is stated in the README instead of being hidden.
+- **Error caching:** `CustomErrorResponses` entries for 500, 502, 503 and 504 with **only** `ErrorCachingMinTTL: 1` (no `ResponseCode` and no `ResponsePagePath`). They keep the original status and body and shorten how long CloudFront remembers the error. Without this, CloudFront keeps an origin error for its default of 10 seconds (CONFIRMED, [AWS docs](https://docs.aws.amazon.com/gb_en/AmazonCloudFront/latest/DeveloperGuide/custom-error-pages-expiration.html)), so a short backend problem would outlive the problem. A 429 from API Gateway is not in the list of codes that can be configured, and whether CloudFront caches it is UNVERIFIED. It is limited in any case by the 10 s cache `MaxTTL`. Task F-5 checks this on the deployed stack.
+- **TLS:** default CloudFront certificate and domain (no custom domain). With the default certificate CloudFront sets the security policy to TLSv1 whatever value is given for `MinimumProtocolVersion` (CONFIRMED, [AWS SDK reference](https://docs.aws.amazon.com/sdk-for-kotlin/api/latest/cloudfront/aws.sdk.kotlin.services.cloudfront.model/-viewer-certificate/minimum-protocol-version.html)). This limit is accepted and is stated in the README instead of being hidden.
 - **IPv6** on. **HTTP version** `http2` (default). **Price class** from the parameter. No WAF, no logging, no Origin Shield, no custom domain.
 - **The direct API URL stays reachable.** CloudFront needs it as an origin, and HTTP API has no way to accept only CloudFront without extra code. Stage throttling (`ThrottleRateLimit` 20, `ThrottleBurstLimit` 50) still protects it. A secret origin header is not used (it would need an authorizer Lambda, which adds cost and code for a demo).
 
@@ -308,7 +308,7 @@ A small stack, deleted after the demo.
 | `DemoFunction` | `python3.12`, `arm64`, 128 MB, `Timeout: 10`. Reads `MODE` from the environment. Parameter `InitialMode` (default `ok`, allowed `ok`, `slow`, `down`) sets it at deploy time. |
 | `DemoFunctionRole` | Only `logs:CreateLogStream` and `logs:PutLogEvents` on its own log group (requirement 2.4). No access to the state table. |
 | `DemoLogGroup` | Retention 7 days. |
-| Function URL | `AuthType: NONE`. This is the only public endpoint of the demo. SAM's `FunctionUrlConfig` also creates the permission that allows public calls. |
+| Function URL | `AuthType: NONE`. This is the only public endpoint of the demo. Public calls need two resource-policy statements, see 7.3. |
 
 Behavior of the handler (about 20 lines, written only after the tasks are approved):
 
@@ -349,6 +349,16 @@ A demo run of about 8 minutes: `ok` (healthy) then `slow` (2 min) then `down` (3
 
 The earlier chat estimate of "3 minutes" for recovery was too long. The code needs the first success plus one more fast check, which is 2 checks, not 3.
 
+### 7.3 Function URL permissions (requirement 8.1, task B-9)
+
+With `AuthType: NONE`, Lambda does not authenticate the caller, but the function's resource-based policy is always in effect and must grant public access, otherwise the URL cannot receive requests ([AWS docs](https://docs.aws.amazon.com/gb_gb/lambda/latest/dg/urls-auth.html)). The same page states that from October 2025 **new function URLs need both `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction`**. Reports of the failure: a function URL created with the CLI or CloudFormation that has only the first statement keeps returning 403 ([example](https://note.com/ryotteyonde/n/n1211baae34de)). The CDK team made the same change for the same reason ([aws-cdk PR 35725](https://github.com/aws/aws-cdk/pull/35725)).
+
+**What the template does.** The SAM property `FunctionUrlConfig` creates the `InvokeFunctionUrl` statement for `AuthType: NONE` (SAM docs not read here, UNVERIFIED). Whether SAM 1.172.1 also creates the `InvokeFunction` statement is not documented in the pages that could be read. The template therefore adds `DemoFunctionInvokeViaUrlPermission` (`lambda:InvokeFunction`, principal `*`, `InvokedViaFunctionUrl: true`). The condition limits it to calls that arrive through the Function URL, so it does not let anyone invoke the function by the Lambda API. The Lambda `AddPermission` API has the `InvokedViaFunctionUrl` parameter. Whether CloudFormation's `AWS::Lambda::Permission` has the same property and whether `cfn-lint` knows it is **checked by the CI lint step**. If the lint rejects it, the fix is decided then. The unconditioned alternative (any AWS principal may call `InvokeFunction` directly) is **not** used without the owner's decision.
+
+**Failure effect if it is wrong.** The demo URL returns 403 in every mode. `decision.py` counts a status of 400 or more as a failure, so the demo target would be `down` in the `ok` mode too. That is why the deploy check list calls the URL directly and requires 200 before the URL is committed or the backend is deployed (tasks D-2 and D-4).
+
+**What stays unverified until deployment:** that a real call to the deployed URL returns 200 (a direct call, `curl`, tasks D-2).
+
 ## 8. Monitored services (`services.json`)
 
 - **Plan:** two large public sites and one demo target entry (N = 3). One demo entry is enough, because both entries would follow the same `MODE`. (Owner can ask for two.)
@@ -370,23 +380,23 @@ The earlier chat estimate of "3 minutes" for recovery was too long. The code nee
 - `NotificationEmail`: String, **no default**, `AllowedPattern` for an address. It is passed at deploy time and never written in a committed file.
 - Region: the Budgets API is served from `us-east-1`, so deploying this stack in `us-east-1` is PROPOSED (UNVERIFIED). The other stacks may use another region (TBD).
 - **Limits (requirement 10.6):** a budget covers the whole account and not one stack. Cost data arrives with a delay of several hours, so a burst of cost is seen late. It sends email only and does not stop anything.
-- Price of Budgets: UNVERIFIED here (a cost-verification task checks the pricing page and records the date).
+- Price of Budgets: budgets without actions are free (CONFIRMED, see 9.2).
 
 ### 9.2 Monthly estimate (volumes are calculated, prices are checked in a cost-verification task)
 
 | Service | Monthly volume | Note |
 |---|---|---|
-| Lambda checker | 43,200 invocations. About 2 to 5 s each (estimate) at 128 MB, so roughly 11,000 to 27,000 GB-s. | Inside the free tier (400,000 GB-s, 1M requests, UNVERIFIED). |
-| EventBridge Scheduler | 43,200 invocations | Inside the free allowance (UNVERIFIED). |
+| Lambda checker | 43,200 invocations. About 2 to 5 s each (estimate) at 128 MB, so roughly 11,000 to 27,000 GB-s. | Inside the free tier: 1 million requests and 400,000 GB-s per month (CONFIRMED, [Lambda pricing](https://aws.amazon.com/lambda/pricing)). |
+| EventBridge Scheduler | 43,200 invocations | 14 million free invocations per month, then 1.00 USD per million (quoted from the documentation in [AWS re:Post](https://repost.aws/questions/QUNWhNp8a_TA6NfiiDp50Gcw/pricing-for-amazon-bridge-schedule), the official pricing page itself could not be opened: UNVERIFIED). |
 | DynamoDB | 3 services x 43,200 = 129,600 checks. About 130k reads and 130k writes, plus reader requests. | Already estimated at about 0.13 USD for 4 services in `state-store-read-api/design.md` 2.5. |
 | API Gateway and status Lambda | Reader requests that pass the 5 s edge cache | One origin request per 5 s per edge location at most, much lower than viewer polls. |
-| CloudFront | Demo traffic only | Inside the free tier (UNVERIFIED). |
-| S3 | A few hundred KB stored | Negligible. |
-| CloudWatch Logs | A few log lines per run | Small. Retention 14 days. |
+| CloudFront | Demo traffic only | A free allowance of 1 TB and 10 million requests per month is reported by third-party pages. The official pricing page now shows flat-rate plans next to pay-as-you-go, and its numbers could not be read: UNVERIFIED. The template creates a pay-as-you-go distribution. |
+| S3 | A few hundred KB stored | Negligible (S3 Standard has no minimum charge per the [S3 pricing page](https://aws.amazon.com/s3/pricing/?c=sl&p=ft&z=3)). Per-unit rates come from third-party pages: UNVERIFIED. |
+| CloudWatch Logs | A few log lines per run | Small. Retention 14 days. Rate of about 0.50 USD per GB ingested is from third-party pages: UNVERIFIED. |
 | Demo Lambda | 43,200 checks plus any outside callers | Free-tier range. Abuse case in section 7. |
-| Budgets | 1 budget | UNVERIFIED. |
+| Budgets | 1 budget without actions | Free: budgets without actions are free ([AWS Budgets FAQ](https://aws.amazon.com/aws-cost-management/aws-budgets/faqs/), CONFIRMED). |
 
-Worst-case ceilings: the status API 73 USD (existing analysis, 6.2 of the read-API design), the checker about 10 USD (5.3), the demo target depends on outside callers. The budget limit of 10 USD would alert before these are reached.
+Worst-case ceilings: the status API 73 USD (existing analysis, 6.2 of the read-API design), the checker about 10 USD (5.3), the demo target depends on outside callers. The budget (default limit 10 USD) alerts by email when actual or forecast cost nears the limit, a few hours after the cost appears (section 9.1). It does not stop anything.
 
 ### 9.3 Fixed-cost items not used
 
@@ -501,3 +511,29 @@ The answers from the checker author make some requirement texts outdated. They a
 | 13 | Items 1, 2, 6, 7 | Statuses updated as in section 13. New items C-1 to C-5. |
 | 2.2, 3.3 | Retry policy to be chosen | Chosen in 4.1 and 4.2 (PROPOSAL). |
 | 14.1 | The five files do not exist | Three exist on `main`. Still not edited. |
+
+## 16. Verification log (tasks B-8 and B-9)
+
+Checked on 2026-11-27 with web searches. The official AWS documentation and pricing pages returned HTTP 403 to the fetch tool, so only the search snippets of official pages could be read. **CONFIRMED** means an official AWS page or an official AWS statement in a snippet says it. **UNVERIFIED** means only third-party pages or no page could be read. No deployment was needed or made.
+
+| # | Item | Result | Status |
+|---|---|---|---|
+| 1 | Scheduler role trust: `aws:SourceAccount` | The Scheduler guide recommends `aws:SourceArn` and `aws:SourceAccount` for the execution role. The template uses `aws:SourceAccount` only. | CONFIRMED |
+| 1b | `aws:SourceArn` must name the schedule **group** | Seen in public repositories quoting the docs. Not read on the official page. Not used in the template. | UNVERIFIED |
+| 2 | Managed policy IDs (`CachingOptimized`, `AllViewerExceptHostHeader`, `SecurityHeadersPolicy`) | Found in several public repositories. The `SecurityHeadersPolicy` ID is also quoted from the AWS docs page in an AWS re:Post question. Not read on the official list. | UNVERIFIED (low risk: a wrong ID fails at stack creation) |
+| 3 | Default certificate minimum TLS | CloudFront sets TLSv1 whatever the setting is. | CONFIRMED |
+| 4 | Error caching default | 10 seconds. | CONFIRMED |
+| 4b | Whether CloudFront caches an API Gateway 429 | Not found in the pages that could be read. Tested after deployment (task D-10). | UNVERIFIED |
+| 5 | Invalidating `/index.html` and the default root object | The docs say to specify the default root object path like any other file, which is ambiguous. A third-party action adds `/` for it. `/*` is used, which covers both. | UNVERIFIED (handled by using `/*`) |
+| 6 | Function URL permissions | From October 2025 a new function URL needs both `InvokeFunctionUrl` and `InvokeFunction`. See 7.3. | CONFIRMED |
+| 6b | Whether SAM `FunctionUrlConfig` adds the `InvokeFunction` statement | Not documented in the pages read. The template adds it explicitly. | UNVERIFIED (handled) |
+| 6c | CloudFormation property `InvokedViaFunctionUrl` | The Lambda API has it. The CloudFormation property is checked by the CI lint step. | UNVERIFIED until CI |
+| 7 | Reserved concurrency on a new account | Not researched, because no reservation is used. | not needed |
+| 8 | Function URL id and the account id | Format `https://<url-id>.lambda-url.<region>.on.aws`. The docs call it unique and permanent. No statement about how `<url-id>` is made. The decisive check stays the direct look at the real hostname (task D-4). | UNVERIFIED |
+| 9 | Budgets region and price | Budgets without actions are free (FAQ). Whether CloudFormation needs `us-east-1` was not found, `us-east-1` stays the proposal. | price CONFIRMED, region UNVERIFIED |
+| 10 | Lambda free tier | 1 million requests and 400,000 GB-s per month. | CONFIRMED |
+| 10b | Lambda arm64 price per GB-s (about 0.0000133334 USD) | Third-party pages only. | UNVERIFIED |
+| 11 | Scheduler price and free allowance (14 million per month, 1.00 USD per million) | Quoted from the documentation in AWS re:Post. | UNVERIFIED (official page unread) |
+| 12 | CloudFront free allowance and rates | Third-party pages only. The official page shows flat-rate plans. | UNVERIFIED |
+| 13 | S3 and CloudWatch Logs unit rates | Third-party pages only. | UNVERIFIED |
+| 14 | Scheduler invokes Lambda asynchronously, Lambda retries async errors twice | Official pages. | CONFIRMED (section 4.1) |

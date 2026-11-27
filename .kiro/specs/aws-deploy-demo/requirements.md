@@ -117,7 +117,8 @@ custom domains, AWS WAF, NAT Gateway, authentication, and failure injection into
 6. The Lambda SHALL use `python3.12`, `arm64`, the smallest memory size, a timeout longer than the maximum delay, and a log retention of 7 days or less.
 7. design.md SHALL document (with a link to AWS documentation) whether a Function URL hostname contains the AWS account ID. IF it does THEN the demo URL SHALL NOT be committed, and the decision SHALL be taken again with the owner.
 8. design.md SHALL include a timeline table for each change of `MODE`, computed from `petState.ts` thresholds (2 slow checks, 3 failures, the first success after an outage, then 2 fast checks counting that first success) and the 1-minute schedule. Recovery to `healthy` takes 2 checks.
-9. The demo stack SHALL be deletable on its own, and the documentation SHALL say to delete it after the demo.
+9. The demo function's resource policy SHALL allow both `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` for public calls through the Function URL (required for new function URLs since October 2025, design 7.3). Before the URL is committed or the checker is enabled, a direct call to the deployed URL SHALL return 200 in the `ok` mode, because a 403 makes the demo target look `down` in every mode.
+10. The demo stack SHALL be deletable on its own, and the documentation SHALL say to delete it after the demo.
 
 ## Requirement 9: Monitored services
 
