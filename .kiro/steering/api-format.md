@@ -44,3 +44,4 @@ Example before the first check:
 ## Errors
 - Non-2xx responses return `{ "error": { "code": "string", "message": "string" } }`.
 - Never return stack traces or internal AWS identifiers.
+- The frontend must not depend on the body of a non-2xx response, because API Gateway and CloudFront can return their own bodies (for example for 429 or 403).
