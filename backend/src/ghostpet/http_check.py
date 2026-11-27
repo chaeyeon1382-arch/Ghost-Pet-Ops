@@ -29,31 +29,27 @@ Security contract (design.md 3, 4.1 step 1; security.md):
 
 Timeout design note:
   ``timeout_s`` (default 5.0 s) is passed as the socket timeout to
-  ``opener.open()``, which sets it on the underlying socket via
-  ``sock.settimeout(timeout_s)``.  This means each *individual* socket
-  I/O phase — TCP connect, TLS handshake, and reading the response headers
-  — is subject to a *per-phase* limit of ``timeout_s``, not an absolute
-  wall-clock limit for the entire request.
-
-  In the worst case the total elapsed time before a TimeoutError is raised
-  can reach ``N × timeout_s`` (where N is the number of sequential I/O
-  phases that each time out) plus the DNS resolution time.
+  ``opener.open()``, which propagates it to the underlying socket via
+  ``sock.settimeout(timeout_s)``.  Each *individual* socket I/O phase
+  (TCP connect, TLS handshake, response-header read) is therefore subject
+  to a *per-phase* limit of ``timeout_s``, not an absolute wall-clock
+  limit for the entire request.
 
   DNS resolution (``socket.getaddrinfo``) does **not** honour ``timeout_s``
   at all; it blocks for the duration of the OS-level resolver timeout
-  (typically 5–30 s).
+  (typically 5-30 s on most platforms).
 
-  For this Lambda the practical ceiling is:
-    DNS lookup (OS timeout, up to ~15 s)  ← not covered by timeout_s
-    + TCP connect  (≤ timeout_s = 5 s)
-    + TLS handshake (≤ timeout_s = 5 s)
-    + response headers (≤ timeout_s = 5 s)
-    ≈ up to ~30 s in a worst-case stall
+  Practical worst-case ceiling per service check:
+    DNS lookup      up to ~15 s   (OS resolver, not covered by timeout_s)
+    TCP connect     <= 5 s        (timeout_s)
+    TLS handshake   <= 5 s        (timeout_s)
+    Response read   <= 5 s        (timeout_s)
+    Total           ~30 s max
 
-  The Lambda-level ``Timeout`` setting acts as the absolute hard ceiling
-  and will be tuned after DynamoDB I/O and multi-service timing is known
-  (design.md known gaps, section 10).  A thread-based wall-clock guard
-  could be added later if needed but is not introduced now.
+  The Lambda-level Timeout setting is the absolute hard ceiling.  It will
+  be sized after DynamoDB I/O and multi-service timing is known (design.md
+  section 10, known gaps).  A thread-based wall-clock guard can be added
+  later if operational data shows it is necessary.
 """
 
 from __future__ import annotations
@@ -131,9 +127,19 @@ class _PinnedHTTPSConnection(_hc.HTTPSConnection):
     and for certificate hostname verification, satisfying requirements 9.
     """
 
-    _pinned_ip: str = ""          # set by _SafeHTTPSHandler before open()
+    _pinned_ip: str = ""          # set by _PinnedHTTPSHandler before open()
 
     def connect(self) -> None:
+        # Guard against accidental direct instantiation without a pin.
+        # An empty string would cause socket.create_connection(("", port))
+        # to either raise an obscure OSError or, on some platforms, resolve
+        # to localhost.  Raising ValueError here makes the misconfiguration
+        # immediately visible instead of silently connecting to the wrong host.
+        if not self._pinned_ip:
+            raise ValueError(
+                "_PinnedHTTPSConnection._pinned_ip must be set before connect(); "
+                "use _PinnedHTTPSHandler to create this connection"
+            )
         port = self.port or 443
         raw: socket.socket = socket.create_connection(
             (self._pinned_ip, port),
@@ -258,6 +264,11 @@ def perform_check(
     ssl_ctx = ssl.create_default_context()   # system trust store + hostname check
 
     opener = urllib.request.build_opener(
+        # Explicitly suppress proxy env-var handling.  Without ProxyHandler({})
+        # here, build_opener() auto-inserts ProxyHandler() which reads
+        # HTTP_PROXY / HTTPS_PROXY / NO_PROXY and routes traffic through that
+        # proxy — bypassing _PinnedHTTPSHandler and the SSRF defence entirely.
+        urllib.request.ProxyHandler({}),
         _PinnedHTTPSHandler(resolved_ip, ssl_ctx),
         _NoRedirectHandler(),
     )
